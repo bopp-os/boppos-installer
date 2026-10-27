@@ -102,7 +102,9 @@ is parked for the target). The installer ISO is hybrid so it also works on `dd` 
 
 Online model: ISO is small (~1 GB); on boot it brings up the network (Ethernet automatically, Wi-Fi page otherwise),
 fetches `flavors.json` from a fixed URL (flavor name, image ref, size, deckify availability), then `bootc install` pulls
-`ghcr.io/bopp-os/cachyos-<flavor>:latest` directly. Cosign verification: ship `cosign.pub` and a `policy.json`
+`ghcr.io/bopp-os/cachyos-<flavor>:<cpu-level>` directly. Images are tagged per CPU level (`v3`, `v4`, `znver4`; see the
+image repo's `build-*.yml`), so the installer detects the CPU and picks the highest level it supports (znver4 = Zen 4,
+checked in CI via the `avx512_vnni` flag; v4 = x86-64-v4; else v3), and lets the user override it. Cosign verification: ship `cosign.pub` and a `policy.json`
 in the installer; point `--target-imgref` at the signed registry ref.
 
 ## 4. The bootloader question (read this one first)

@@ -4,6 +4,9 @@
 #
 #   sudo tests/bootloader-probe.sh {bootloaders|keep-home|all} [image] [workdir]
 #
+# [image] defaults to the image the host is booted from (`bootc status`), so a znver4 host tests the znver4 image.
+# Tags are per CPU level: :v3, :v4, :znver4 (see the image repo's build-*.yml workflows).
+#
 # bootloaders: for each --bootloader value, install to a fresh 40G image, print the partition table and ESP contents,
 #              and boot it in QEMU (if qemu + OVMF are present) looking for a login prompt.
 # keep-home:   install once, plant a file in /var/home, a changed file in the deployment's /etc and a fake
@@ -13,7 +16,16 @@
 set -euo pipefail
 
 MODE="${1:-all}"
-IMAGE="${2:-ghcr.io/bopp-os/cachyos-plasma:latest}"
+# Default image: the one this host is booted from (e.g. ghcr.io/bopp-os/cachyos-plasma:znver4).
+booted_image() {
+    bootc status --format=json 2>/dev/null |
+        python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["booted"]["image"]["image"]["image"])' 2>/dev/null
+}
+IMAGE="${2:-$(booted_image || true)}"
+if [ -z "$IMAGE" ]; then
+    echo "Could not read the booted image from 'bootc status'; pass one, e.g. ghcr.io/bopp-os/cachyos-plasma:znver4"
+    exit 2
+fi
 WORK="${3:-$(mktemp -d)}"
 OVMF="${OVMF:-/usr/share/edk2/x64/OVMF_CODE.4m.fd}"
 KEEP_HOME_BOOTLOADER="${KEEP_HOME_BOOTLOADER:-systemd}"
