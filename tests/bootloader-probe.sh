@@ -48,9 +48,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Run bootc from the image with host devices and container storage.
+# Run bootc from the image with host devices and container storage. The image ends with ENV SOURCE_DATE_EPOCH=""
+# and mkfs.fat refuses an empty value, so unset it.
 bootc_run() {
-    podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t \
+    podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t --unsetenv=SOURCE_DATE_EPOCH \
         -v /dev:/dev -v /var/lib/containers:/var/lib/containers -v "$WORK/mnt:/target" \
         "$IMAGE" bootc "$@"
 }
