@@ -4,4 +4,5 @@ Net-installer image for [BoppOS](https://github.com/bopp-os) (SteamOS Recovery s
 flavor, network and hardware options, it downloads and installs the bootc image).
 
 Status: design proposal only. Read [docs/design.md](docs/design.md). Nothing is implemented.
-Run `tests/bootloader-probe.sh` (root + podman, on the host or CI) to answer the open bootloader question first.
+Run `sudo tests/bootloader-probe.sh all` (root + podman, on the host or CI) to answer the open bootloader question
+and test reinstalling while keeping home (`bootloaders` or `keep-home` runs one of the two).

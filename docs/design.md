@@ -128,6 +128,43 @@ Whatever the result, the installer calls bootc with an explicit `--bootloader` v
 so the installer does not need to change when the image decision lands. If the choice is "none", the installer image
 can run `bootctl install` itself against the mounted target ESP as a fallback (works, but then updates are unmanaged).
 
+## 4b. Reinstalling over an old bootc system and keeping home
+
+Read from bootc source, `main` @ `d3b33bc` (2026-10-27, after v1.17.2). Line numbers are in
+`crates/lib/src/install.rs` unless noted; `deploy.rs` is `crates/ostree-ext/src/container/deploy.rs`. Nothing was run.
+
+How `--replace=alongside` works:
+- `install to-existing-root` is `install to-filesystem --replace=alongside --skip-finalize` on the host `/` bind-mounted
+  at `/target` (2999-3045). From our live installer we call `to-filesystem --replace=alongside` on the mounted old root.
+- Only boot content is deleted (2832-2843, 2562-2637): everything in `/boot` (the `loader*` dirs survive only when the
+  target is a *booted* ostree deployment, detected via `<root>/sysroot/ostree` at 2782-2790; not our case), and the
+  **whole `EFI/` and `loader/` dirs on the ESP**. A TODO there says other OSes' `EFI/<vendor>` are not kept yet.
+  `--replace=wipe` instead empties the whole filesystem.
+- An existing `ostree/repo` is reused ("Reusing extant ostree layout", 1024-1037).
+- Stateroot defaults to `default` (808-819). bootc refuses only if it equals the *booted* stateroot (1103-1107). An
+  existing stateroot dir is reused (1111-1120). From live media nothing is booted, so reusing the old one is allowed.
+- Deploy passes the old stateroot's latest deployment as merge deployment (`deploy.rs` 79, 120-139). Effects:
+  `/var` of that stateroot is shared, so `/var/home`, Flatpaks and container storage carry over; and ostree's
+  3-way `/etc` merge copies every `/etc` file the old OS changed (`passwd`, `shadow`, `group`, NetworkManager
+  connections, `fstab`) over the new image's `/etc`.
+- Cleanup of old deployments is skipped when the repo existed (`no_clean`, 1328): old OS files stay until
+  `ostree admin cleanup`.
+- `--cleanup` only enables Fedora's `bootc-destructive-cleanup` script (`rpm -e` on `/sysroot`, `podman system prune`);
+  useless for BoppOS.
+
+Installer plan, two modes:
+1. **Same stateroot** (BoppOS to BoppOS reinstall, e.g. to repair the bootloader): read the name from
+   `/ostree/deploy/*`, pass `--stateroot <name>`. Home, users and passwords come along with no copying.
+2. **New stateroot** (from Fedora-based Bazzite/Bluefin): the `/etc` merge would copy Fedora's `passwd`/`group` over
+   Arch's, which is untested and risky. Instead install into a new stateroot, move `<old>/var/home` into the new
+   `/var` (same filesystem, a rename), recreate users with the same UID/GID, and reuse `bopp-migrate` for selected `/etc`.
+
+Must-fix in either mode: before calling bootc, copy every `EFI/<vendor>` other than BoppOS's own (e.g. `EFI/Microsoft`)
+off the ESP and put it back afterwards, or Windows on a shared ESP stops booting. Then run `ostree admin cleanup`
+to drop the old deployment.
+
+`tests/bootloader-probe.sh keep-home` tests mode 1 and the ESP behavior on a loopback disk.
+
 ## 5. Repo layout (`bopp-os/boppos-installer`)
 
 ```
@@ -144,7 +181,7 @@ boppos-installer/
     ui_tui.py                 fallback TUI/CLI (later)
   image/                      archiso profile: packages.x86_64, airootfs/, bootloader configs
   tests/
-    bootloader-probe.sh       section 4 probe
+    bootloader-probe.sh       section 4 and 4b probes
     test_plan.py              unit tests, no root needed
   .github/workflows/          build ISO + QEMU smoke test (later)
 ```
