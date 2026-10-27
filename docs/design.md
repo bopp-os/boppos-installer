@@ -130,6 +130,36 @@ Whatever the result, the installer calls bootc with an explicit `--bootloader` v
 so the installer does not need to change when the image decision lands. If the choice is "none", the installer image
 can run `bootctl install` itself against the mounted target ESP as a fallback (works, but then updates are unmanaged).
 
+### 4a. systemd-boot means bootc's composefs backend (2026-10-27)
+
+- First probe run: `--bootloader systemd` fails with `bootupd is required for ostree-based installs` (`install.rs`
+  ~2104). On the ostree backend only bootupd installs bootloaders. bootc's `bootc-bootloaders.7.md`: systemd-boot is
+  only supported on the composefs backend.
+- BoppOS ships `/usr/lib/ostree/prepare-root.conf` (`scripts/bootc-rootfs.sh:27` in bopp-os/cachyos), so bootc picks
+  ostree by default. The installer must pass `--composefs-backend --bootloader systemd`. Plain vmlinuz + initramfs with
+  BLS entries works (no UKI, not sealed). `--allow-missing-verity` is set automatically when the root filesystem lacks
+  fs-verity (`install.rs` 1957-1963).
+- The initramfs needs bootc's dracut module (`bootc-root-setup.service`, `/usr/lib/bootc/initramfs-setup`). The image
+  already adds `bootc` to `add_dracutmodules`; the probe's preflight checks the files are really there.
+- Limits: no `--stateroot` (`install.rs` 428-433, always `default`); no logically bound images; a composefs machine
+  stays composefs for `bootc upgrade/switch`, and `ostree admin` and today's `bopp-kargs` don't apply to it (kargs
+  live in the BLS entries).
+- The image also sets `ENV SOURCE_DATE_EPOCH=""` at the end of `Containerfile.base`, which makes `mkfs.fat` fail inside
+  `bootc install`. The probe unsets it; the image should switch to `ARG SOURCE_DATE_EPOCH=0`.
+- Fallback if composefs fails: `--bootloader none` on ostree, then `bootctl install` and BLS entries generated from
+  ostree's `/boot/loader/entries`, maintained by us on every upgrade.
+
+Keep-home on composefs works differently from section 4b (read from source, not yet run):
+- Layout: shared `/var` at `state/os/default/var`, per-deployment `/etc` at `state/deploy/<id>/etc`, where `<id>` is
+  the image's composefs digest (`composefs_consts.rs` 7-19).
+- Install creates the shared `/var` with `create_dir_all` and copies the image's `/var` over it with
+  `cp -a --remove-destination` (`bootc_composefs/state.rs` 254-280, 138-147). `/var/home` should survive.
+- There is no 3-way `/etc` merge: the new deployment gets the image's pristine `/etc` (`state.rs` 149-155). Users,
+  passwords and NetworkManager connections are lost unless the installer copies them over.
+- Reinstalling the *same* image reuses `state/deploy/<id>` and then creates its `var` symlink again; that likely
+  fails with "File exists". The installer may have to remove the old `state/deploy/<id>` first (keeping
+  `state/os/default/var`).
+
 ## 4b. Reinstalling over an old bootc system and keeping home
 
 Read from bootc source, `main` @ `d3b33bc` (2026-10-27, after v1.17.2). Line numbers are in

@@ -14,6 +14,13 @@
 #              EFI/Microsoft on the ESP, then reinstall with `to-filesystem --replace=alongside` into the same
 #              stateroot and report what survived (see docs/design.md, section 4b).
 #              KEEP_HOME_BOOTLOADER picks the bootloader (default systemd).
+#
+# Every mode first prints a preflight of the image: bootc version and flags, systemd-boot EFI binary, bootc dracut
+# module in the initramfs.
+# --bootloader systemd adds --composefs-backend: bootc's ostree backend only installs bootloaders through bootupd,
+# and systemd-boot is only supported on the composefs backend. composefs keeps /var in state/os/default/var and each
+# deployment's /etc in state/deploy/<id>/etc, and has no --stateroot.
+# PROBE_EXTRA_ARGS is appended to every bootc install (e.g. PROBE_EXTRA_ARGS=--allow-missing-verity).
 set -euo pipefail
 
 MODE="${1:-all}"
@@ -33,6 +40,7 @@ KEEP_HOME_BOOTLOADER="${KEEP_HOME_BOOTLOADER:-systemd}"
 ESP_GUID=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
 ROOT_GUID=4f68bce3-e8cd-4db1-96e7-fbcaf984b709   # DPS root x86-64
 LOOPDEV=""
+read -ra EXTRA_ARGS <<<"${PROBE_EXTRA_ARGS:-}"
 
 case "$MODE" in bootloaders|keep-home|all) ;; *) echo "usage: $0 {bootloaders|keep-home|all} [image] [workdir]"; exit 2;; esac
 mkdir -p "$WORK"
@@ -75,10 +83,30 @@ boot_in_qemu() {  # boot_in_qemu <img> <log>
     fi
 }
 
+backend_args() {  # backend_args <bootloader>: bootc install flags for that bootloader
+    if [ "$1" = systemd ]; then echo --composefs-backend; fi
+}
+
+preflight() {
+    echo "=== preflight ($IMAGE)"
+    podman run --rm --unsetenv=SOURCE_DATE_EPOCH "$IMAGE" sh -c '
+        bootc --version
+        echo "--- bootc install to-disk flags:"
+        bootc install to-disk --help | grep -iE -- "composefs|bootloader|verity" || echo "(none matched)"
+        for f in /usr/lib/systemd/boot/efi/systemd-bootx64.efi /usr/lib/bootc/initramfs-setup; do
+            if [ -e "$f" ]; then echo "present: $f"; else echo "MISSING: $f"; fi
+        done
+        echo "--- bootc files in initramfs:"
+        for i in /usr/lib/modules/*/initramfs.img; do
+            echo "$i"; lsinitrd "$i" 2>/dev/null | grep -i bootc || echo "  (no bootc files, or lsinitrd missing)"
+        done' || echo "preflight: container run FAILED"
+}
+
 install_to_disk() {  # install_to_disk <bootloader> <log>
     mkdir -p "$WORK/mnt"
-    bootc_run install to-disk --bootloader "$1" --wipe --generic-image --karg=console=ttyS0 \
-        --source-imgref "containers-storage:$IMAGE" "$LOOPDEV" >"$2" 2>&1
+    # shellcheck disable=SC2046  # backend_args is zero or one flag
+    bootc_run install to-disk --bootloader "$1" $(backend_args "$1") --wipe --generic-image --karg=console=ttyS0 \
+        "${EXTRA_ARGS[@]}" --source-imgref "containers-storage:$IMAGE" "$LOOPDEV" >"$2" 2>&1
 }
 
 probe_bootloaders() {
@@ -101,10 +129,12 @@ probe_bootloaders() {
 }
 
 probe_keep_home() {
-    local img="$WORK/disk-keephome.img" mnt="$WORK/mnt" esp root boot dep stateroot
-    echo "=== keep-home (bootloader $KEEP_HOME_BOOTLOADER)"
+    local img="$WORK/disk-keephome.img" mnt="$WORK/mnt" bl="$KEEP_HOME_BOOTLOADER"
+    local esp root boot layout stateroot var deploydir olddep newdep
+    local -a target_args=()
+    echo "=== keep-home (bootloader $bl)"
     new_disk "$img"
-    if ! install_to_disk "$KEEP_HOME_BOOTLOADER" "$WORK/keephome-install1.log"; then
+    if ! install_to_disk "$bl" "$WORK/keephome-install1.log"; then
         echo "first install FAILED"; tail -n 15 "$WORK/keephome-install1.log"; cleanup; return
     fi
     sfdisk -l "$LOOPDEV"
@@ -115,23 +145,37 @@ probe_keep_home() {
     echo "esp=$esp root=$root boot=${boot:-none}"
     [ -n "$root" ] || { echo "no DPS root partition found; cannot continue"; cleanup; return; }
 
-    # Plant markers in the "old" system.
+    # Find /var and the deployment for either backend.
     mkdir -p "$mnt"; mount "$root" "$mnt"
-    stateroot=$(basename "$(find "$mnt/ostree/deploy" -mindepth 1 -maxdepth 1 -type d | head -n1)")
-    dep=$(find "$mnt/ostree/deploy/$stateroot/deploy" -mindepth 1 -maxdepth 1 -type d -name '*.0' | head -n1)
-    echo "stateroot=$stateroot old deployment=$(basename "$dep")"
-    mkdir -p "$mnt/ostree/deploy/$stateroot/var/home/probeuser"
-    echo keep-me >"$mnt/ostree/deploy/$stateroot/var/home/probeuser/marker"
-    echo etc-merged >"$dep/etc/boppos-probe-marker"
+    if [ -d "$mnt/state/deploy" ]; then
+        layout=composefs
+        var="$mnt/state/os/default/var"
+        deploydir="$mnt/state/deploy"
+    else
+        layout=ostree
+        stateroot=$(basename "$(find "$mnt/ostree/deploy" -mindepth 1 -maxdepth 1 -type d | head -n1)")
+        var="$mnt/ostree/deploy/$stateroot/var"
+        deploydir="$mnt/ostree/deploy/$stateroot/deploy"
+        target_args=(--stateroot "$stateroot")
+    fi
+    olddep=$(find "$deploydir" -mindepth 1 -maxdepth 1 -type d | head -n1)
+    echo "layout=$layout old deployment=$(basename "$olddep")"
+    [ -n "$olddep" ] || { echo "no deployment found; cannot continue"; cleanup; return; }
+
+    # Plant markers in the "old" system.
+    mkdir -p "$var/home/probeuser"
+    echo keep-me >"$var/home/probeuser/marker"
+    echo etc-merged >"$olddep/etc/boppos-probe-marker"
     [ -n "$boot" ] && mount "$boot" "$mnt/boot"
     mkdir -p "$mnt/boot/efi"; mount "$esp" "$mnt/boot/efi"
     mkdir -p "$mnt/boot/efi/EFI/Microsoft/Boot"
     echo fake >"$mnt/boot/efi/EFI/Microsoft/Boot/bootmgfw.efi"
     echo "--- ESP before reinstall"; find "$mnt/boot/efi" -maxdepth 3
 
-    # Reinstall alongside into the same stateroot, with the partitions mounted at /target.
-    if bootc_run install to-filesystem --replace=alongside --acknowledge-destructive \
-        --stateroot "$stateroot" --bootloader "$KEEP_HOME_BOOTLOADER" --karg=console=ttyS0 \
+    # Reinstall alongside (same stateroot on ostree), with the partitions mounted at /target.
+    # shellcheck disable=SC2046  # backend_args is zero or one flag
+    if bootc_run install to-filesystem --replace=alongside --acknowledge-destructive "${target_args[@]}" \
+        --bootloader "$bl" $(backend_args "$bl") --karg=console=ttyS0 "${EXTRA_ARGS[@]}" \
         --source-imgref "containers-storage:$IMAGE" /target >"$WORK/keephome-install2.log" 2>&1; then
         echo "reinstall: OK"
     else
@@ -141,14 +185,16 @@ probe_keep_home() {
     # Report. Remount in case bootc left things read-only or unmounted.
     mountpoint -q "$mnt" || mount "$root" "$mnt"
     mountpoint -q "$mnt/boot/efi" || mount "$esp" "$mnt/boot/efi"
-    echo "--- deployments now:"; find "$mnt/ostree/deploy/$stateroot/deploy" -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
-    if [ -f "$mnt/ostree/deploy/$stateroot/var/home/probeuser/marker" ]; then
-        echo "home: KEPT"; else echo "home: LOST"; fi
-    local newest
-    newest=$(find "$mnt/ostree/deploy/$stateroot/deploy" -mindepth 1 -maxdepth 1 -type d -name '*.0' \
-        -newer "$dep" | head -n1)
-    if [ -z "$newest" ]; then echo "/etc merge: no new deployment found"
-    elif [ -f "$newest/etc/boppos-probe-marker" ]; then echo "/etc merge: old /etc change CARRIED OVER"
+    echo "--- deployments now:"; find "$deploydir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
+    if [ -f "$var/home/probeuser/marker" ]; then echo "home: KEPT"; else echo "home: LOST"; fi
+    newdep=$(find "$deploydir" -mindepth 1 -maxdepth 1 -type d ! -path "$olddep" | head -n1)
+    if [ -z "$newdep" ] && [ "$layout" = composefs ]; then
+        # composefs names deployments by image digest, so the same image reuses the old one.
+        echo "/etc merge: no new deployment id (same image reuses the old one); checking it"
+        newdep="$olddep"
+    fi
+    if [ -z "$newdep" ]; then echo "/etc merge: no new deployment found"
+    elif [ -f "$newdep/etc/boppos-probe-marker" ]; then echo "/etc merge: old /etc change CARRIED OVER"
     else echo "/etc merge: old /etc change NOT carried over"; fi
     if [ -f "$mnt/boot/efi/EFI/Microsoft/Boot/bootmgfw.efi" ]; then
         echo "ESP: EFI/Microsoft KEPT"; else echo "ESP: EFI/Microsoft DELETED"; fi
@@ -157,6 +203,7 @@ probe_keep_home() {
     boot_in_qemu "$img" "$WORK/boot-keephome.log"
 }
 
+preflight
 case "$MODE" in
     bootloaders) probe_bootloaders ;;
     keep-home) probe_keep_home ;;
