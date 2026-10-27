@@ -5,6 +5,7 @@
 #   sudo tests/bootloader-probe.sh {bootloaders|keep-home|all} [image] [workdir]
 #
 # [image] defaults to the image the host is booted from (`bootc status`), so a znver4 host tests the znver4 image.
+# [workdir] defaults to /var/tmp/boppos-probe: on disk, since /tmp is tmpfs on CachyOS.
 # Tags are per CPU level: :v3, :v4, :znver4 (see the image repo's build-*.yml workflows).
 #
 # bootloaders: for each --bootloader value, install to a fresh 40G image, print the partition table and ESP contents,
@@ -26,7 +27,7 @@ if [ -z "$IMAGE" ]; then
     echo "Could not read the booted image from 'bootc status'; pass one, e.g. ghcr.io/bopp-os/cachyos-plasma:znver4"
     exit 2
 fi
-WORK="${3:-$(mktemp -d)}"
+WORK="${3:-/var/tmp/boppos-probe}"
 OVMF="${OVMF:-/usr/share/edk2/x64/OVMF_CODE.4m.fd}"
 KEEP_HOME_BOOTLOADER="${KEEP_HOME_BOOTLOADER:-systemd}"
 ESP_GUID=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
