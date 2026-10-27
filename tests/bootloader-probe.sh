@@ -13,7 +13,8 @@
 # keep-home:   install once, plant a file in /var/home, a changed file in the deployment's /etc and a fake
 #              EFI/Microsoft on the ESP, then reinstall with `to-filesystem --replace=alongside` into the same
 #              stateroot and report what survived (see docs/design.md, section 4b).
-#              KEEP_HOME_BOOTLOADER picks the bootloader (default systemd).
+#              KEEP_HOME_BOOTLOADER picks the bootloader (default systemd). KEEP_HOME_REUSE=1 skips the first
+#              install and reuses disk-keephome.img from an earlier run.
 #
 # Every mode first prints a preflight of the image: bootc version and flags, systemd-boot EFI binary, bootc dracut
 # module in the initramfs.
@@ -38,6 +39,7 @@ WORK="${3:-/var/tmp/boppos-probe}"
 OVMF="${OVMF:-/usr/share/edk2/x64/OVMF_CODE.4m.fd}"
 KEEP_HOME_BOOTLOADER="${KEEP_HOME_BOOTLOADER:-systemd}"
 ESP_GUID=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+XBOOTLDR_GUID=bc13c2ff-59e6-4262-a352-b275fd6f7172
 ROOT_GUID=4f68bce3-e8cd-4db1-96e7-fbcaf984b709   # DPS root x86-64
 LOOPDEV=""
 read -ra EXTRA_ARGS <<<"${PROBE_EXTRA_ARGS:-}"
@@ -133,15 +135,20 @@ probe_keep_home() {
     local esp root boot layout stateroot var deploydir olddep newdep
     local -a target_args=()
     echo "=== keep-home (bootloader $bl)"
-    new_disk "$img"
-    if ! install_to_disk "$bl" "$WORK/keephome-install1.log"; then
-        echo "first install FAILED"; tail -n 15 "$WORK/keephome-install1.log"; cleanup; return
+    if [ "${KEEP_HOME_REUSE:-0}" = 1 ] && [ -f "$img" ]; then
+        echo "reusing the first install in $img (KEEP_HOME_REUSE=1)"
+        LOOPDEV=$(losetup --find --show --partscan "$img")
+    else
+        new_disk "$img"
+        if ! install_to_disk "$bl" "$WORK/keephome-install1.log"; then
+            echo "first install FAILED"; tail -n 15 "$WORK/keephome-install1.log"; cleanup; return
+        fi
     fi
     sfdisk -l "$LOOPDEV"
     esp=$(part_by_guid "$ESP_GUID")
     root=$(part_by_guid "$ROOT_GUID")
-    # A /boot partition, if any, is the one that is neither ESP nor root.
-    boot=$(lsblk -nrpo NAME,TYPE "$LOOPDEV" | awk '$2=="part"{print $1}' | grep -vxF -e "$esp" -e "$root" | head -n1 || true)
+    # A separate /boot, if any, is an XBOOTLDR partition (not the 1M BIOS boot one bootc also creates).
+    boot=$(part_by_guid "$XBOOTLDR_GUID")
     echo "esp=$esp root=$root boot=${boot:-none}"
     [ -n "$root" ] || { echo "no DPS root partition found; cannot continue"; cleanup; return; }
 
