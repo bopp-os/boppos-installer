@@ -50,7 +50,7 @@ if [ "$MODE" = boot ]; then
         echo "qemu=${q:-MISSING} firmware=${fw:-MISSING}"
         [ -n "$q" ] && [ -n "$fw" ] || { find "${q%/bin/*}" -iname "*edk2*" -o -iname "*ovmf*" 2>/dev/null | head -20; exit 3; }
         [ -r "$1" ] || { echo "disk not visible inside the sandbox: $1"; exit 3; }
-        timeout 90 "$q" -m 4096 -enable-kvm -nographic \
+        timeout 90 "$q" -m 4096 -enable-kvm -cpu host -nographic \
             -drive if=pflash,format=raw,readonly=on,file="$fw" -drive file="$1",format=raw,snapshot=on </dev/null
         exit 0' sh "$disk" >"$log" 2>&1 || true
     head -n3 "$log"
@@ -117,7 +117,7 @@ part_by_guid() {  # part_by_guid <guid>: partition device of that type on $LOOPD
 
 boot_in_qemu() {  # boot_in_qemu <img> <log>
     if command -v qemu-system-x86_64 >/dev/null && [ -f "$OVMF" ]; then
-        timeout 90 qemu-system-x86_64 -m 4096 -enable-kvm -nographic \
+        timeout 90 qemu-system-x86_64 -m 4096 -enable-kvm -cpu host -nographic \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF" -drive file="$1",format=raw >"$2" 2>&1 || true
         if grep -q "login:" "$2"; then echo "boot: reached login"; else echo "boot: NO login prompt (see $2)"; fi
     else
