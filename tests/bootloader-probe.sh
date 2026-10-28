@@ -10,7 +10,7 @@
 #       virt-manager flatpak's QEMU extension (FLATPAK_APP to change it), read-only via snapshot=on, for
 #       BOOT_TIMEOUT seconds (default 240), and looks for a login prompt on the serial console. BOOT_MEM (MiB,
 #       default 4096) and BOOT_DRIVE_IF (ide or virtio, default ide) pick the VM memory and disk type.
-#       Log: /tmp/boppos-probe-boot.log.
+#       Log: probe-logs/boot.log.
 # verify: mounts the disk read-only, reads every composefs object and lists the ones that fail (fs-verity or I/O),
 #         runs btrfs check --readonly, identifies VERIFY_INODES (default: the ones from the first boot log), and
 #         repeats the failing blocks with read() and mmap. VERIFY_SCAN=0 skips the full read.
@@ -39,6 +39,11 @@
 set -euo pipefail
 
 MODE="${1:-all}"
+# Logs go to probe-logs/ in this repo (gitignored), readable from the Litterbox; disk images stay in the work dir.
+LOGS="${LOGS:-$(cd "$(dirname "$0")/.." && pwd)/probe-logs}"
+mkdir -p "$LOGS"
+# Under sudo, hand the folder to the calling user so boot mode (run unprivileged) can write to it too.
+if [ "$(id -u)" = 0 ] && [ -n "${SUDO_UID:-}" ]; then chown "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$LOGS"; fi
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-240}"  # seconds QEMU may run before the probe looks for a login prompt
 BOOT_MEM="${BOOT_MEM:-4096}"
 BOOT_DRIVE_IF="${BOOT_DRIVE_IF:-ide}"
@@ -47,7 +52,7 @@ BOOT_DRIVE_IF="${BOOT_DRIVE_IF:-ide}"
 if [ "$MODE" = boot ]; then
     disk="${2:-/var/tmp/boppos-probe/disk-keephome.img}"
     app="${FLATPAK_APP:-org.virt_manager.virt-manager}"
-    log=/tmp/boppos-probe-boot.log
+    log="$LOGS/boot.log"
     [ "$(id -u)" = 0 ] && echo "warning: run boot mode as your user; flatpak apps are meant to run unprivileged"
     [ -r "$disk" ] || { echo "cannot read $disk"; exit 2; }
     echo "booting $disk with $app (${BOOT_TIMEOUT}s, ${BOOT_MEM} MiB, disk if=$BOOT_DRIVE_IF, log $log)"
@@ -244,7 +249,7 @@ install_to_disk() {  # install_to_disk <bootloader> <log>
 
 probe_bootloaders() {
     for bl in systemd grub none; do
-        local img="$WORK/disk-$bl.img" log="$WORK/install-$bl.log" esp
+        local img="$WORK/disk-$bl.img" log="$LOGS/install-$bl.log" esp
         echo "=== --bootloader $bl"
         new_disk "$img"
         if install_to_disk "$bl" "$log"; then echo "install: OK"; else echo "install: FAILED"; tail -n 15 "$log"; fi
@@ -257,7 +262,7 @@ probe_bootloaders() {
             echo "no ESP found"
         fi
         cleanup
-        boot_in_qemu "$img" "$WORK/boot-$bl.log"
+        boot_in_qemu "$img" "$LOGS/boot-$bl.log"
     done
 }
 
@@ -267,7 +272,7 @@ probe_bootloaders() {
 probe_fisherman() {
     local src="${FISHERMAN_SRC:-$(cd "$(dirname "$0")/../.." && pwd)/fisherman}"
     local template recipe="$WORK/fisherman-recipe.json" bin="$WORK/go/bin/fisherman-boppos"
-    local img="$WORK/disk-fisherman.img" log="$WORK/fisherman-install.log" rc=0 esp m
+    local img="$WORK/disk-fisherman.img" log="$LOGS/fisherman-install.log" rc=0 esp m
     template="$(cd "$(dirname "$0")/.." && pwd)/recipes/boppos-test.json"
     echo "=== fisherman ($src, branch $(git -C "$src" branch --show-current 2>/dev/null || echo '?'))"
     [ -f "$src/fisherman/go.mod" ] || { echo "no fisherman checkout at $src (set FISHERMAN_SRC)"; return; }
@@ -291,10 +296,14 @@ json.dump(r, open(sys.argv[4], "w"), indent=1)' "$template" "$LOOPDEV" "$IMAGE" 
     env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME="$WORK/fisherman-home" LANG=C.UTF-8 \
         "$bin" validate "$recipe" || { echo "recipe validation FAILED"; cleanup; return; }
     echo "--- install (log $log)"
-    env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME="$WORK/fisherman-home" LANG=C.UTF-8 \
+    # Private mount namespace: fisherman's mounts (the target, and a bind mount over /var/tmp during the OCI
+    # export) stay invisible to the rest of the host and vanish when it exits.
+    unshare --mount --propagation private \
+        env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME="$WORK/fisherman-home" LANG=C.UTF-8 \
         "$bin" "$recipe" >"$log" 2>&1 || rc=$?
     echo "fisherman exit: $rc"; tail -n 25 "$log"
-    # Unmount anything fisherman left mounted from this loop device only, deepest first.
+    # Safety net (the namespace normally takes fisherman's mounts with it): unmount anything from this loop
+    # device only, deepest first.
     findmnt -rno TARGET,SOURCE | awk -v d="$LOOPDEV" 'index($2, d) == 1 {print $1}' | sort -r |
         while read -r m; do umount "$m" || true; done
     sfdisk -l "$LOOPDEV" || true
@@ -322,8 +331,8 @@ probe_keep_home() {
         LOOPDEV=$(losetup --find --show --partscan "$img")
     else
         new_disk "$img"
-        if ! install_to_disk "$bl" "$WORK/keephome-install1.log"; then
-            echo "first install FAILED"; tail -n 15 "$WORK/keephome-install1.log"; cleanup; return
+        if ! install_to_disk "$bl" "$LOGS/keephome-install1.log"; then
+            echo "first install FAILED"; tail -n 15 "$LOGS/keephome-install1.log"; cleanup; return
         fi
     fi
     sfdisk -l "$LOOPDEV"
@@ -368,17 +377,17 @@ probe_keep_home() {
             --bootloader "$bl" $(backend_args "$bl") --karg=console=ttyS0 "${EXTRA_ARGS[@]}" \
             --source-imgref "containers-storage:$IMAGE" /target >"$1" 2>&1
     }
-    if reinstall "$WORK/keephome-install2.log"; then
+    if reinstall "$LOGS/keephome-install2.log"; then
         echo "reinstall: OK"
     else
-        echo "reinstall: FAILED"; tail -n 20 "$WORK/keephome-install2.log"
+        echo "reinstall: FAILED"; tail -n 20 "$LOGS/keephome-install2.log"
         # composefs names the deployment dir by image digest, so the same image collides with the old one.
         # Retry the way the installer would: move the old deployment aside, keep state/os/default/var.
-        if [ "$layout" = composefs ] && grep -q 'symlink for /var: File exists' "$WORK/keephome-install2.log"; then
+        if [ "$layout" = composefs ] && grep -q 'symlink for /var: File exists' "$LOGS/keephome-install2.log"; then
             echo "retry: moving $(basename "$olddep") aside to *.probe-old, keeping state/os/default/var"
             rm -rf "$olddep.probe-old"; mv "$olddep" "$olddep.probe-old"; olddep="$olddep.probe-old"
-            if reinstall "$WORK/keephome-install3.log"; then echo "retry reinstall: OK"
-            else echo "retry reinstall: FAILED"; tail -n 20 "$WORK/keephome-install3.log"; fi
+            if reinstall "$LOGS/keephome-install3.log"; then echo "retry reinstall: OK"
+            else echo "retry reinstall: FAILED"; tail -n 20 "$LOGS/keephome-install3.log"; fi
         fi
     fi
 
@@ -404,7 +413,7 @@ probe_keep_home() {
         [ -f "$f" ] && { echo "--- ${f#"$mnt"/boot/efi/}"; cat "$f"; }
     done
     cleanup
-    boot_in_qemu "$img" "$WORK/boot-keephome.log"
+    boot_in_qemu "$img" "$LOGS/boot-keephome.log"
 }
 
 preflight
@@ -414,4 +423,4 @@ case "$MODE" in
     fisherman) probe_fisherman ;;
     all) probe_bootloaders; probe_keep_home ;;
 esac
-echo "Done. Logs in $WORK"
+echo "Done. Logs in $LOGS, disk images in $WORK"
