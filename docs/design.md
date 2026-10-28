@@ -336,8 +336,10 @@ Decided 2026-10-27: fork tuna-os/bootc-installer (E); composefs + systemd-boot (
 toggle; keep-home reinstall; optional in-place LUKS2 of the kept root (btrfs/ext4); image tag picked from the CPU.
 
 Still open:
-1. Create `bopp-os/bootc-installer`, `bopp-os/fisherman` and `bopp-os/boppos-installer` on GitHub (local repo
-   exists, no remote yet).
+1. Create `bopp-os/boppos-installer` on GitHub (local repo exists, no remote yet). The forks
+   `bopp-os/bootc-installer` and `bopp-os/fisherman` exist since 2026-10-27 (upstream default branch `dev`;
+   Issues and Actions off until enabled). Next on the fork: a `boppos` branch whose `.gitmodules` points at
+   `bopp-os/fisherman`.
 2. Image repo fixes: `ARG SOURCE_DATE_EPOCH=0` instead of the trailing `ENV SOURCE_DATE_EPOCH=""`; os-release name so
    the boot entry says BoppOS instead of "Arch Linux"; a `loader.conf` timeout.
 3. Installer environment: archiso (recommended) vs bootc-image based.
