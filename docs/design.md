@@ -147,8 +147,12 @@ Environment (recommended): an **archiso-style (or CachyOS live-profile) minimal 
 desktop, no shell unless the user presses a hidden key (tty2). Building needs `mkarchiso`, which needs root and loop
 devices, so it runs in **CI** (GitHub Actions) or on the host, not in the Litterbox.
 
-With option E, the forked installer (Python UI + the `fisherman` Go binary) is built natively with meson/go into the
-archiso `airootfs` (no Flatpak runtime on the ISO) and `cage` launches it full-screen.
+With option E, the forked installer comes from the bopp-os package repo (`bopp-os/pkgbuilds`,
+`packages/boppos-bootc-installer`): one split PKGBUILD builds `boppos-bootc-installer` (Python UI) and
+`boppos-fisherman` (Go backend) from pinned commits of the two `boppos` branches. The `boppos-` names keep a
+same-named package elsewhere from replacing them (pacman takes a package from the first repo that has its name);
+`provides`/`conflicts` cover the upstream names, and the binaries keep theirs. The ISO lists them in
+`packages.x86_64`, no Flatpak runtime, and `cage` launches the installer full-screen.
 
 Alternative: build the installer environment as a bootc/OCI image from the same CachyOS base and convert it with a
 disk-image tool. More parts, same result; revisit if we want the installer itself updatable. Not for v1.
@@ -361,6 +365,7 @@ Three repos under `bopp-os`:
 - `bopp-os/fisherman`: fork of tuna-os/fisherman (the installer's submodule points here). Keep-home reinstall,
   ESP vendor backup/restore, in-place `cryptsetup reencrypt`, `/etc` account merge.
 - `bopp-os/boppos-installer` (this repo): the ISO and everything around the installer.
+- `bopp-os/pkgbuilds`: `packages/boppos-bootc-installer` packages both forks (see section 3).
 
 ```
 boppos-installer/
