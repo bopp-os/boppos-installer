@@ -8,7 +8,9 @@
 #   image/dev.sh shell                 a shell in the dev container with the local packages installed
 #   image/dev.sh setup                 (re)build the dev image
 #
-# The container is rootless and gets no devices, so the installer cannot touch this machine's disks. Its log goes to
+# The installer lists this machine's disks (it reads /sys) but cannot write to them, two ways over: the container is
+# rootless and gets no device files, and BOOTC_DEMO=1 makes "Install" replay a fake transcript instead of starting
+# fisherman. Never add --privileged, --device or -v /dev to this script. The log goes to
 # probe-logs/dev-run.log and .dev/home/.cache/bootc-installer/ (the installer's own debug log).
 set -euo pipefail
 
@@ -120,6 +122,7 @@ in_container() {  # in_container <podman flags> -- <command...>
         -v "$sock:/tmp/xdg/host-0" \
         -e XDG_RUNTIME_DIR=/tmp/xdg -e WAYLAND_DISPLAY=host-0 \
         -e WLR_RENDERER=pixman -e GSK_RENDERER=cairo \
+        -e BOOTC_DEMO=1 \
         "$img" bash -c '
             pacman -U --noconfirm --needed /pkgs/*.pkg.tar.zst >/tmp/pacman.log 2>&1
             command -v bootc-installer >/dev/null || { tail -n 20 /tmp/pacman.log; exit 1; }
