@@ -72,7 +72,14 @@ new_disk() {  # new_disk <file>: fresh sparse image attached as $LOOPDEV
 }
 
 part_by_guid() {  # part_by_guid <guid>: partition device of that type on $LOOPDEV
-    lsblk -nrpo NAME,PARTTYPE "$LOOPDEV" | awk -v g="$1" 'tolower($2)==g{print $1; exit}'
+    # Probe the GPT with blkid -p: lsblk's PARTTYPE comes from udev and is empty right after losetup.
+    udevadm settle 2>/dev/null || true
+    local p
+    for p in $(lsblk -nrpo NAME,TYPE "$LOOPDEV" | awk '$2=="part"{print $1}'); do
+        if [ "$(blkid -p -o value -s PART_ENTRY_TYPE "$p" 2>/dev/null | tr '[:upper:]' '[:lower:]')" = "$1" ]; then
+            echo "$p"; return
+        fi
+    done
 }
 
 boot_in_qemu() {  # boot_in_qemu <img> <log>
