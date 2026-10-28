@@ -18,6 +18,8 @@ adwaita-fonts
 noto-fonts
 # Installer (bopp-os repo); fisherman pulls podman, skopeo and the disk tools; boppos-artwork has the BoppOS icons
 boppos-artwork
+# The boot splash (the theme itself comes from boppos-tools at build time, see build.sh)
+plymouth
 boppos-bootc-installer
 boppos-fisherman
 efibootmgr
