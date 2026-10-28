@@ -34,7 +34,8 @@
           "desc": "Most CPUs from 2015 on (AVX2)"
         }
       ],
-      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png"
+      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
+      "needs_user_creation": true
     },
     {
       "name": "BoppOS GNOME",
@@ -68,7 +69,8 @@
           "desc": "Most CPUs from 2015 on (AVX2)"
         }
       ],
-      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png"
+      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
+      "needs_user_creation": true
     },
     {
       "name": "BoppOS Niri",
@@ -102,7 +104,8 @@
           "desc": "Most CPUs from 2015 on (AVX2)"
         }
       ],
-      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png"
+      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
+      "needs_user_creation": true
     },
     {
       "name": "BoppOS Cinnamon",
@@ -136,7 +139,8 @@
           "desc": "Most CPUs from 2015 on (AVX2)"
         }
       ],
-      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png"
+      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
+      "needs_user_creation": true
     }
   ]
 }
