@@ -1,0 +1,14 @@
+#!/bin/bash
+# diag: one screen of what matters when an install misbehaves (type it on tty2: Ctrl+Alt+F2).
+log=/home/liveuser/.cache/bootc-installer/fisherman-output.log
+t=/mnt/fisherman-target
+echo "== fisherman log (last 8 lines)"
+tail -n 8 "$log" 2>&1 | cut -c1-200
+echo "== storage driver in use"
+find "$t/.fisherman-scratch/containers-root" -maxdepth 1 -printf '%f ' 2>&1; echo
+echo "== target mount"
+findmnt -no FSTYPE,OPTIONS "$t" 2>&1 | cut -c1-150
+echo "== space"
+df -h "$t" /var/tmp /tmp 2>&1 | cat
+echo "== memory (MiB: total used free shared cache available)"
+free -m | sed -n 2p

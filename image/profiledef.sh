@@ -16,4 +16,6 @@ airootfs_image_tool_options=('-comp' 'xz' '-Xbcj' 'x86' '-b' '1M' '-Xdict-size' 
 file_permissions=(
   ["/etc/shadow"]="0:0:400"
   ["/etc/sudoers.d/10-liveuser"]="0:0:440"
+  ["/usr/local/bin/diag"]="0:0:755"
+  ["/usr/local/bin/mon"]="0:0:755"
 )
