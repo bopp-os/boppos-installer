@@ -186,6 +186,9 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   4 KiB blocks. Every `real_hash` is the SHA-512 of a zero block, so those blocks read back as zeros. Not yet known
   whether the data is missing on disk (e.g. bootc's `fstrim` through the loop device, or the same-image reinstall
   reusing the object store) or only in the VM. `bootloader-probe.sh verify` checks the disk on the host.
+  Result: on the host all 233,538 composefs objects (including inodes 88485 and 68745) read back with valid
+  fs-verity, so the data on disk is intact; the zeros come from the guest's read path (scattered/mmap reads vs. the
+  host's sequential read). Next check: cold single-block reads at the guest's offsets on the host.
 - Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
   would be left with no boot entry).
 
