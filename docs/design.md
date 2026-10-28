@@ -1,6 +1,8 @@
 # BoppOS net-installer: design and options
 
-Status: **proposal, nothing built.** Written 2026-10-27. Decision needed from the maintainer: section 6.
+Status: **proposal, nothing built.** Written 2026-10-27. Recommendation: fork tuna-os/bootc-installer (option E,
+confirmed by the maintainer 2026-10-27). Bootloader path verified on a loopback disk (section 4a). Open decisions:
+section 7.
 
 Goal: a bootable installer image in the style of SteamOS Recovery (not a live-USB demo). The user boots it and picks
 target drive, user account, desktop flavor (or "deckify" Gaming Mode), Wi-Fi/Ethernet, and basic hardware optimizations.
@@ -11,7 +13,7 @@ It then downloads the BoppOS bootc image and installs it. It hands off to the `b
 | Fact | Source | Consequence |
 |---|---|---|
 | BoppOS is Arch/CachyOS, built from `Containerfile.base` + flavor Containerfiles. | `~/Projects/boppos/cachyos` | Anything RPM-native (Anaconda) runs on a different OS than the payload. |
-| The image installs `bootc`, `ostree`, `dracut`, `btrfs-progs`, `e2fsprogs`, `dosfstools`. It installs **no** GRUB, `bootupd`, `shim`, `efibootmgr`. | `files/base/base.yaml` (grep for grub/bootupd: no hits) | `bootc install` has no bootloader tooling to call from inside the image today. **This is the open question; see section 4.** |
+| The image installs `bootc`, `ostree`, `dracut`, `btrfs-progs`, `e2fsprogs`, `dosfstools`. It installs **no** GRUB, `bootupd`, `shim`, `efibootmgr`. | `files/base/base.yaml` (grep for grub/bootupd: no hits) | The ostree backend can't install a bootloader. **Answered in section 4a:** `--composefs-backend --bootloader systemd` installs and boots to login. |
 | Default root FS is btrfs (`00-rootfs.toml`). `/boot` is not forced to ext4. | `files/base/usr/lib/bootc/install/` | Installer must keep btrfs as the default and not assume ext4 `/boot`. |
 | Image-wide kargs live in `90-boppos-optimizations.toml`; DMI-matched presets live in boppos-tools `kargs.d/*.conf` and `boppos.hwprofiles`. | image repo, boppos-tools | Hardware step reuses these, never copies them. |
 | bootc `install to-disk` / `to-filesystem` options (v1.16.13): `--bootloader grub\|grub-cc\|systemd\|none`, `--filesystem`, `--karg`, `--block-setup direct\|tpm2-luks`, `--source-imgref`, `--target-imgref`, `--composefs-backend`, `--bound-images`. | [bootc man page](https://www.mankier.com/8/bootc-install-to-disk) | Flags we need (kargs, TPM2 LUKS, bootloader choice) exist. `to-disk` is whole-disk only; RAID/LVM/LUKS/partition reuse go through `to-filesystem`. |
@@ -51,7 +53,7 @@ UI shell. Qt/C++ with Python job modules; Arch has it packaged. Less Fedora bagg
 disabling most of what it does, and its user-account module writes into a normal `/etc`, which does not match a
 deployed ostree root. Reasonable second choice if a Qt partition UI is wanted.
 
-### C. Minimal custom installer around `bootc install` (recommended)
+### C. Minimal custom installer around `bootc install` (earlier recommendation; now the fallback)
 
 A small Python backend (probe disks, build a plan, run `bootc install`, create user, write first-run marker) behind two
 front ends sharing one backend: a GTK4/libadwaita wizard (same stack, theme, and artwork as `boppos-deck`) and a plain
@@ -69,18 +71,47 @@ bib produces disk images and ISOs from a bootc image. A disk image is useful for
 but it needs a Fedora-based builder container and its ISO types wrap Anaconda (so it inherits A). It also has its own
 btrfs limits (no subvolumes at build time per RHEL docs). Use it, if at all, only as a test fixture, not as the installer.
 
+### E. Fork tuna-os/bootc-installer (recommended)
+
+[tuna-os/bootc-installer](https://github.com/tuna-os/bootc-installer) is a GTK4/libadwaita installer for bootc images,
+a hard fork of the Vanilla OS installer by way of `projectbluefin/bootc-installer` (archived 2026-09). GPL-3.0, active
+(last push 2026-10-26). The UI is Python; the install work is done by its Go backend
+[tuna-os/fisherman](https://github.com/tuna-os/fisherman) (git submodule, GPL-3.0, 51 Go files), which reads a JSON
+recipe and runs `bootc install to-filesystem`. Checked in the source (shallow clones, 2026-10-27):
+- Two boot stacks: systemd-boot + composefs (`composeFsBackend`, `bootloader: systemd` in the recipe) and GRUB2.
+  The composefs path is the one section 4a verified for BoppOS. A recipe rule already refuses composefs on XFS.
+- LUKS2 for new installs: passphrase, TPM2, or both.
+- User creation that knows the composefs layout (`internal/post/user.go`: first-boot tmpfiles for `/var/home/<user>`).
+- Unattended install from a JSON recipe (`--autoinstall`), offline install from a live ISO, a phone companion.
+- Several front ends (GNOME/GTK, KDE, COSMIC, niri, XFCE); we would ship only the GTK one.
+
+What it lacks, which BoppOS adds on the fork:
+1. **Reinstall keeping `/home`** (no `alongside` handling in fisherman): the section 4a steps (save other OSes'
+   `EFI/<vendor>`, save `/etc` accounts and connections, move old `state/deploy/<id>` aside, install, merge, clean up).
+2. **Optional in-place LUKS2 of the kept root** with `cryptsetup reencrypt` (btrfs/ext4 only, not XFS), before bootc.
+3. **CPU-level image tag**: pick `:znver4` / `:v4` / `:v3` from the CPU (section 3), with an override.
+4. **Dark mode by default** with a light toggle (`AdwStyleManager`), BoppOS branding, flavors from `flavors.json`,
+   the hardware-presets page, and the handoff marker for `boppos-deck --welcome` / `--oobe` (section 6).
+5. Defaults for BoppOS: btrfs, composefs, systemd-boot; hide Bluefin/Fedora-specific steps.
+
+Risks: a large, fast-moving upstream (about 1.7 MB of Python plus Go, QML and C++ front ends); Fedora/Universal Blue
+assumptions to find and switch off (SELinux fields, GRUB paths, Bluefin images); packaged as a Flatpak upstream,
+while our ISO needs a native build. Mitigation: keep BoppOS changes as small, separate commits on a branch that
+rebases on upstream, and offer the generic ones (keep-home, CPU-level tags) upstream.
+
 ### Summary
 
-| | A Anaconda | B Calamares | **C custom** | D bib |
-|---|---|---|---|---|
-| Fits Arch payload | poor | ok | **good** | poor |
-| Effort to first working install | high | medium | **low-medium** | n/a |
-| Own the UX (flavor, deckify, Wi-Fi, hw-opts) | deep patching | modules in C++/Python | **direct** | no |
-| Solves bootloader question | no | no | no | no |
-| Maintenance | Fedora toolchain | Qt + Calamares upgrades | our code only | Fedora tool |
+| | A Anaconda | B Calamares | C custom | D bib | **E fork tuna-os** |
+|---|---|---|---|---|---|
+| Fits Arch payload | poor | ok | good | poor | **good** (verify for Fedora-isms) |
+| Effort to first working install | high | medium | low-medium | n/a | **low** |
+| Own the UX (flavor, deckify, Wi-Fi, hw-opts) | deep patching | modules in C++/Python | direct | no | **patches to a GTK app** |
+| systemd-boot + composefs install | no | no | to write | no | **built in** |
+| Keep-home reinstall | no | no | to write | no | **to add (fisherman)** |
+| Maintenance | Fedora toolchain | Qt + Calamares upgrades | our code only | Fedora tool | **rebase on upstream** |
 
-Recommendation: **C**, with B's idea of a thin Python job layer, and the option to swap the GTK front end for a Qt/web one later,
-because the backend does not depend on it.
+Recommendation: **E**. It already does the composefs + systemd-boot install that section 4a proved works, plus LUKS2,
+user creation and unattended recipes. C remains the fallback if the fork's Fedora assumptions prove too deep.
 
 ## 3. How the installer image is built and booted
 
@@ -92,6 +123,9 @@ Environment (recommended): an **archiso-style (or CachyOS live-profile) minimal 
 `dosfstools`, `cryptsetup`, `sfdisk`, firmware, and a minimal GPU stack. Boots straight into the wizard like SteamOS Recovery; no
 desktop, no shell unless the user presses a hidden key (tty2). Building needs `mkarchiso`, which needs root and loop
 devices, so it runs in **CI** (GitHub Actions) or on the host, not in the Litterbox.
+
+With option E, the forked installer (Python UI + the `fisherman` Go binary) is built natively with meson/go into the
+archiso `airootfs` (no Flatpak runtime on the ISO) and `cage` launches it full-screen.
 
 Alternative: build the installer environment as a bootc/OCI image from the same CachyOS base and convert it with a
 disk-image tool. More parts, same result; revisit if we want the installer itself updatable. Not for v1.
@@ -107,9 +141,11 @@ image repo's `build-*.yml`), so the installer detects the CPU and picks the high
 checked in CI via the `avx512_vnni` flag; v4 = x86-64-v4; else v3), and lets the user override it. Cosign verification: ship `cosign.pub` and a `policy.json`
 in the installer; point `--target-imgref` at the signed registry ref.
 
-## 4. The bootloader question (read this one first)
+## 4. The bootloader question
 
-Today, `bootc install` on this image **cannot be assumed to work end to end**:
+**Answered in section 4a**: composefs backend + systemd-boot. The text below is the original analysis.
+
+Before the probe, `bootc install` on this image **could not be assumed to work end to end**:
 - The image has no GRUB, `bootupd` or `shim` package (checked in `base.yaml`). bootc's default (`grub`) goes through
   `bootupctl`.
 - `--bootloader systemd` exists. It uses `bootctl`/systemd-boot from inside the image; on Arch the `systemd` package
@@ -253,36 +289,38 @@ to drop the old deployment.
 
 `tests/bootloader-probe.sh keep-home` tests mode 1 and the ESP behavior on a loopback disk.
 
-## 5. Repo layout (`bopp-os/boppos-installer`)
+## 5. Repo layout
+
+Three repos under `bopp-os`:
+- `bopp-os/bootc-installer`: fork of tuna-os/bootc-installer. BoppOS changes on a `boppos` branch rebased on upstream:
+  branding, dark-mode default, CPU-level tag picker, flavors, hardware-presets page, first-run handoff.
+- `bopp-os/fisherman`: fork of tuna-os/fisherman (the installer's submodule points here). Keep-home reinstall,
+  ESP vendor backup/restore, in-place `cryptsetup reencrypt`, `/etc` account merge.
+- `bopp-os/boppos-installer` (this repo): the ISO and everything around the installer.
 
 ```
 boppos-installer/
   README.md
   docs/design.md              this file
-  installer/                  python package `boppos_installer`
-    plan.py                   disk probe + install plan (pure, unit-testable)
-    run.py                    executes the plan: sfdisk/mkfs/bootc/useradd/marker
-    answers.py                answers.json schema (also used for unattended installs)
-    net.py                    NetworkManager/iwd wrapper
-    hw.py                     calls boppos.hwprofiles -> --karg list
-    ui_gtk/                   GTK4/libadwaita wizard (later)
-    ui_tui.py                 fallback TUI/CLI (later)
-  image/                      archiso profile: packages.x86_64, airootfs/, bootloader configs
+  image/                      archiso profile: packages.x86_64, airootfs/, bootloader configs; builds the fork natively
+  recipes/                    default fisherman recipes (BoppOS defaults; unattended CI install)
+  flavors.json                flavor list served to the installer (or published from the image repo)
   tests/
-    bootloader-probe.sh       section 4 and 4b probes
-    test_plan.py              unit tests, no root needed
-  .github/workflows/          build ISO + QEMU smoke test (later)
+    bootloader-probe.sh       sections 4, 4a, 4b: install, keep-home, boot and verify probes
+  .github/workflows/          build ISO + QEMU smoke test with an --autoinstall recipe (later)
 ```
 
-Only `docs/`, `tests/bootloader-probe.sh` and this layout exist now.
+Only `docs/` and `tests/bootloader-probe.sh` exist now. Nothing from this work goes into boppos-tools; the installer
+only reads its `hwprofiles` data.
 
 ## 6. Handoff to the first-run wizard
 
 The installer writes the user's choices to the deployed system, then reboots:
 1. `answers.json` copied to `<deploy>/var/lib/boppos/install-answers.json` (flavor, hw-opts chosen, locale, Wi-Fi profile
    if wanted). `/var` is the stateroot's persistent part, so it survives updates.
-2. **User account.** Installer asks for it, so it creates the user itself with `useradd --root <deployment>` (home under `/var/home`),
-   hashed password only, never plaintext. Exact ostree path and `/etc` merge behavior need a test (not verified).
+2. **User account.** Installer asks for it; fisherman's `internal/post/user.go` already creates it for the composefs
+   layout (`useradd` into the deployment's `/etc`, first-boot tmpfiles create `/var/home/<user>`). Hashed password only.
+   On a keep-home reinstall the account comes from the merged old `/etc` instead (section 4a).
 3. Marker `/var/lib/boppos/first-run` with `mode=welcome` if a user was created, or `mode=oobe` (no user, e.g. bare
    `bootc install to-disk`, which creates none). A unit/autostart with
    `ConditionPathExists=/var/lib/boppos/first-run` starts `boppos-deck --welcome` or `--oobe`, then removes the marker.
@@ -294,8 +332,14 @@ The installer writes the user's choices to the deployed system, then reboots:
 
 ## 7. Open decisions for the maintainer
 
-1. Approve **C (custom installer)**, or insist on **A (Anaconda)** after seeing the costs above.
-2. Run the bootloader probe on the host (needs root + podman) and share results; this decides section 4.
+Decided 2026-10-27: fork tuna-os/bootc-installer (E); composefs + systemd-boot (4a); dark mode default with a light
+toggle; keep-home reinstall; optional in-place LUKS2 of the kept root (btrfs/ext4); image tag picked from the CPU.
+
+Still open:
+1. Create `bopp-os/bootc-installer`, `bopp-os/fisherman` and `bopp-os/boppos-installer` on GitHub (local repo
+   exists, no remote yet).
+2. Image repo fixes: `ARG SOURCE_DATE_EPOCH=0` instead of the trailing `ENV SOURCE_DATE_EPOCH=""`; os-release name so
+   the boot entry says BoppOS instead of "Arch Linux"; a `loader.conf` timeout.
 3. Installer environment: archiso (recommended) vs bootc-image based.
-4. Repo creation on GitHub under `bopp-os` and the name `boppos-installer` (local repo exists, no remote yet).
-5. v1 scope: whole-disk erase only, or also "install into an existing partition"?
+4. v1 scope: whole-disk erase plus keep-home reinstall, or also "install into an existing partition"?
+5. Re-test the fs-verity errors (section 4a) on real hardware before release.
