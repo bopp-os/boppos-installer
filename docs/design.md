@@ -176,8 +176,14 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
 - The BLS entry is titled "Arch Linux" (file `bootc_arch-<id>-1.conf`): bootc takes it from the image's os-release.
   Its options are `root=UUID=… rootflags=subvol=/ rw composefs=<id>` plus the `--karg`s and the image's own kargs
   (`mitigations=off`, `amd_pstate=active`, `rd.luks.options=tpm2-device=auto`, …).
-- Not yet tested: booting the result (needs `qemu-base` + `edk2-ovmf` on the host), and a reinstall with a
-  *different* image digest (no collision, but the old `state/deploy/<oldid>` would be left with no boot entry).
+- Boot of the reinstalled disk in QEMU (virt-manager flatpak, edk2 firmware, `-cpu host`): UEFI → systemd-boot →
+  kernel → dracut initramfs → `bootc setup root` → switch root → systemd in the real root. Login prompt not yet
+  seen (the first run stopped at 90 s while services were starting). Without `-cpu host`, systemd dies with SIGILL
+  in the initramfs: znver4 images need a Zen 4 CPU, so test VMs and the installer's CPU check must match.
+- `dracut-crypt-generator` fails (exit 2) in the initramfs on an unencrypted root, likely from the image's
+  `rd.luks.options=tpm2-device=auto` karg. Boot continues.
+- Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
+  would be left with no boot entry).
 
 Installer steps for a composefs reinstall that keeps home, from these results:
 1. Copy every `EFI/<vendor>` except `systemd`, `BOOT`, `Linux` off the ESP; put them back after bootc.
