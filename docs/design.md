@@ -160,6 +160,18 @@ Keep-home on composefs works differently from section 4b (read from source, not 
   fails with "File exists". The installer may have to remove the old `state/deploy/<id>` first (keeping
   `state/os/default/var`).
 
+Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, loopback disk, no QEMU boot yet):
+- Preflight: `--composefs-backend` and `--allow-missing-verity` exist; `systemd-bootx64.efi`, `initramfs-setup` and
+  `bootc-root-setup.service` (in the initramfs) are present.
+- `install to-disk --composefs-backend --bootloader systemd` **succeeds**: GPT with 1M BIOS boot, 1G ESP, btrfs DPS
+  root. ESP holds `EFI/systemd`, `EFI/BOOT/BOOTX64.EFI`, `EFI/Linux/bootc_composefs-<id>/` (kernel + initramfs),
+  `loader/loader.conf`, `loader/entries/bootc_arch-<id>-1.conf`. No XBOOTLDR partition.
+- `to-filesystem --replace=alongside` with the same image **fails** as predicted: `Writing composefs state: Failed to
+  create symlink for /var: File exists`. It fails *after* wiping the ESP's `EFI/` and reinstalling systemd-boot, so
+  `EFI/Microsoft` is gone even though the install failed. The old deployment stays bootable from the rewritten ESP.
+- Home and `/etc` were untouched because bootc stopped before copying; the probe now retries after moving
+  `state/deploy/<id>` aside to test a successful reinstall.
+
 ## 4b. Reinstalling over an old bootc system and keeping home
 
 Read from bootc source, `main` @ `d3b33bc` (2026-10-27, after v1.17.2). Line numbers are in

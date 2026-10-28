@@ -172,7 +172,7 @@ probe_keep_home() {
         deploydir="$mnt/ostree/deploy/$stateroot/deploy"
         target_args=(--stateroot "$stateroot")
     fi
-    olddep=$(find "$deploydir" -mindepth 1 -maxdepth 1 -type d | head -n1)
+    olddep=$(find "$deploydir" -mindepth 1 -maxdepth 1 -type d ! -name '*.probe-old' | head -n1)
     echo "layout=$layout old deployment=$(basename "$olddep")"
     [ -n "$olddep" ] || { echo "no deployment found; cannot continue"; cleanup; return; }
 
@@ -187,13 +187,24 @@ probe_keep_home() {
     echo "--- ESP before reinstall"; find "$mnt/boot/efi" -maxdepth 3
 
     # Reinstall alongside (same stateroot on ostree), with the partitions mounted at /target.
-    # shellcheck disable=SC2046  # backend_args is zero or one flag
-    if bootc_run install to-filesystem --replace=alongside --acknowledge-destructive "${target_args[@]}" \
-        --bootloader "$bl" $(backend_args "$bl") --karg=console=ttyS0 "${EXTRA_ARGS[@]}" \
-        --source-imgref "containers-storage:$IMAGE" /target >"$WORK/keephome-install2.log" 2>&1; then
+    reinstall() {  # reinstall <log>
+        # shellcheck disable=SC2046  # backend_args is zero or one flag
+        bootc_run install to-filesystem --replace=alongside --acknowledge-destructive "${target_args[@]}" \
+            --bootloader "$bl" $(backend_args "$bl") --karg=console=ttyS0 "${EXTRA_ARGS[@]}" \
+            --source-imgref "containers-storage:$IMAGE" /target >"$1" 2>&1
+    }
+    if reinstall "$WORK/keephome-install2.log"; then
         echo "reinstall: OK"
     else
         echo "reinstall: FAILED"; tail -n 20 "$WORK/keephome-install2.log"
+        # composefs names the deployment dir by image digest, so the same image collides with the old one.
+        # Retry the way the installer would: move the old deployment aside, keep state/os/default/var.
+        if [ "$layout" = composefs ] && grep -q 'symlink for /var: File exists' "$WORK/keephome-install2.log"; then
+            echo "retry: moving $(basename "$olddep") aside to *.probe-old, keeping state/os/default/var"
+            rm -rf "$olddep.probe-old"; mv "$olddep" "$olddep.probe-old"; olddep="$olddep.probe-old"
+            if reinstall "$WORK/keephome-install3.log"; then echo "retry reinstall: OK"
+            else echo "retry reinstall: FAILED"; tail -n 20 "$WORK/keephome-install3.log"; fi
+        fi
     fi
 
     # Report. Remount in case bootc left things read-only or unmounted.
@@ -213,6 +224,10 @@ probe_keep_home() {
     if [ -f "$mnt/boot/efi/EFI/Microsoft/Boot/bootmgfw.efi" ]; then
         echo "ESP: EFI/Microsoft KEPT"; else echo "ESP: EFI/Microsoft DELETED"; fi
     echo "--- ESP after reinstall"; find "$mnt/boot/efi" -maxdepth 3
+    local f
+    for f in "$mnt/boot/efi/loader/loader.conf" "$mnt"/boot/efi/loader/entries/*.conf; do
+        [ -f "$f" ] && { echo "--- ${f#"$mnt"/boot/efi/}"; cat "$f"; }
+    done
     cleanup
     boot_in_qemu "$img" "$WORK/boot-keephome.log"
 }
