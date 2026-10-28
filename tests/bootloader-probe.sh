@@ -3,6 +3,11 @@
 # Litterbox). Writes only to sparse loopback files in the work dir.
 #
 #   sudo tests/bootloader-probe.sh {bootloaders|keep-home|all} [image] [workdir]
+#   tests/bootloader-probe.sh boot [disk-image]     (as your user, no sudo)
+#
+# boot: boots a disk the other modes made (default /var/tmp/boppos-probe/disk-keephome.img) in QEMU from the
+#       virt-manager flatpak's QEMU extension (FLATPAK_APP to change it), read-only via snapshot=on, and looks for a
+#       login prompt on the serial console. Log: /tmp/boppos-probe-boot.log.
 #
 # [image] defaults to the image the host is booted from (`bootc status`), so a znver4 host tests the znver4 image.
 # [workdir] defaults to /var/tmp/boppos-probe: on disk, since /tmp is tmpfs on CachyOS.
@@ -25,6 +30,32 @@
 set -euo pipefail
 
 MODE="${1:-all}"
+
+# boot mode needs neither root nor podman, so it runs before the rest of the setup.
+if [ "$MODE" = boot ]; then
+    disk="${2:-/var/tmp/boppos-probe/disk-keephome.img}"
+    app="${FLATPAK_APP:-org.virt_manager.virt-manager}"
+    log=/tmp/boppos-probe-boot.log
+    [ "$(id -u)" = 0 ] && echo "warning: run boot mode as your user; flatpak apps are meant to run unprivileged"
+    [ -r "$disk" ] || { echo "cannot read $disk"; exit 2; }
+    echo "booting $disk with $app (90 s, log $log)"
+    # Find QEMU and its UEFI firmware inside the sandbox (the QEMU extension mounts under /app/extensions).
+    # shellcheck disable=SC2016  # expanded inside the sandbox
+    flatpak run --device=all --filesystem="$(dirname "$disk")":ro --command=sh "$app" -c '
+        q=$(command -v qemu-system-x86_64 || ls /app/extensions/*/bin/qemu-system-x86_64 2>/dev/null | head -n1)
+        fw=$(ls /app/extensions/*/share/qemu/edk2-x86_64-code.fd /app/share/qemu/edk2-x86_64-code.fd \
+             /usr/share/qemu/edk2-x86_64-code.fd 2>/dev/null | head -n1)
+        echo "qemu=${q:-MISSING} firmware=${fw:-MISSING}"
+        [ -n "$q" ] && [ -n "$fw" ] || { ls -R /app/extensions 2>/dev/null | head -40; exit 3; }
+        [ -r "$1" ] || { echo "disk not visible inside the sandbox: $1"; exit 3; }
+        timeout 90 "$q" -m 4096 -enable-kvm -nographic \
+            -drive if=pflash,format=raw,readonly=on,file="$fw" -drive file="$1",format=raw,snapshot=on </dev/null
+        exit 0' sh "$disk" >"$log" 2>&1 || true
+    head -n3 "$log"
+    if grep -q "login:" "$log"; then echo "boot: reached login"
+    else echo "boot: NO login prompt"; tail -n 30 "$log"; fi
+    exit 0
+fi
 # Default image: the one this host is booted from (e.g. ghcr.io/bopp-os/cachyos-plasma:znver4).
 booted_image() {
     bootc status --format=json 2>/dev/null |
@@ -44,7 +75,7 @@ ROOT_GUID=4f68bce3-e8cd-4db1-96e7-fbcaf984b709   # DPS root x86-64
 LOOPDEV=""
 read -ra EXTRA_ARGS <<<"${PROBE_EXTRA_ARGS:-}"
 
-case "$MODE" in bootloaders|keep-home|all) ;; *) echo "usage: $0 {bootloaders|keep-home|all} [image] [workdir]"; exit 2;; esac
+case "$MODE" in bootloaders|keep-home|all) ;; *) echo "usage: $0 {bootloaders|keep-home|all} [image] [workdir] | $0 boot [disk-image]"; exit 2;; esac
 mkdir -p "$WORK"
 echo "mode=$MODE image=$IMAGE work=$WORK"
 podman pull "$IMAGE"
