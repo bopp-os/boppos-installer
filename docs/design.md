@@ -194,8 +194,10 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   pressure at 4 GiB, or a guest-side kernel path). Booting with virtio instead of IDE, or with 8 GiB, still logs
   10 errors, so neither the emulated disk nor memory is the cause. Remaining suspect: the guest reads composefs
   objects through mmap page faults (fault-around/readahead), while the host checks used `read()`. A kernel bug in
-  btrfs fs-verity on that path, possibly with this file's fragmented 1-block extents, would explain it. `verify`
-  now repeats the blocks through a cold mmap.
+  btrfs fs-verity on that path, possibly with this file's fragmented 1-block extents, would explain it. A cold mmap
+  read on the host also returns the correct data, so the host cannot reproduce it by any read path tried; it only
+  happens inside the running guest. Next: `btrfs check --readonly` on the image (free-space records that wrongly
+  mark these blocks free would let the guest reuse them) and identifying the two files.
 - Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
   would be left with no boot entry).
 
