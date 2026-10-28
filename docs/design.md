@@ -104,6 +104,9 @@ were needed on the fork, all candidates for upstream (the 4th came with the boot
 4. `kernelArgs` recipe field (one `bootc --karg` each); fisherman had no way to pass kernel arguments, needed for
    hardware presets and for `console=ttyS0` in VM tests.
 
+The fisherman-installed disk boots in QEMU (4 GB, `-cpu host`) to `boppos-test login:` with no failed units; the
+hostname and test user come from the recipe. It also shows the guest-only fs-verity errors from section 4a.
+
 What fisherman does beyond the recipe, for BoppOS to decide on:
 - Copies the running system's Wi-Fi connections and Bluetooth pairings into the target (right on the live ISO,
   where they come from the installer session; the probe hides them on the host).
@@ -255,6 +258,9 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   happens inside the running guest. `btrfs check --readonly` on the image finds no errors. The files: inode 88485
   is a 96 MB PIE executable (the errors follow "Started Cloudflare Zero Trust Client Daemon", so likely
   `warp-svc`; unconfirmed), inode 68745 is a zstd-compressed file (likely a kernel module or firmware).
+  The fisherman-installed disk (fresh `to-filesystem` install, no reinstall) shows the same pattern: 20 errors in
+  3 files (inodes 108937, 147365, 89566), scattered 4 KiB blocks, boot still reaches login. So it is not caused by
+  the probe's `to-disk` + reinstall path.
   **Status: parked as a VM-only finding.** The installed data is intact and boot reaches login. Before shipping,
   re-test on real hardware (check `journalctl -k | grep 'FILE CORRUPTED'` after first boot); if it shows there,
   reproduce inside the guest by reading those objects from `/sysroot/composefs/objects` and report to btrfs/fs-verity
