@@ -67,6 +67,8 @@ if [ "$MODE" = boot ]; then
     if grep -q "login:" "$log"; then echo "boot: reached login"
     else echo "boot: NO login prompt"; tail -n 30 "$log"; fi
     echo "fs-verity errors in the boot log: $(grep -c "FILE CORRUPTED" "$log" || true)"
+    grep -o 'inode [0-9]*): FILE CORRUPTED! pos=[0-9]*' "$log" | sed 's/): FILE CORRUPTED! pos=/ @ /' | sort -u |
+        tr '\n' ',' | sed 's/,$/\n/' || true
     exit 0
 fi
 
@@ -115,6 +117,21 @@ if [ "$MODE" = verify ]; then
         fi
     done
     rm -f "$blk"
+    # The guest maps composefs objects (binaries, libraries) and faults pages in, which takes a different
+    # readahead path than read(). Repeat each block that way, cold; SIGBUS (exit 135) means a verity failure.
+    echo "--- cold mmap page-fault reads"
+    for b in ${blocks//,/ }; do
+        ino="${b%%:*}"; off="${b##*:}"
+        obj=$(btrfs inspect-internal inode-resolve "$ino" "$vmnt" 2>/dev/null | head -n1)
+        sync; echo 3 >/proc/sys/vm/drop_caches
+        rc=0
+        out=$(python3 -I -c 'import hashlib, mmap, sys
+f = open(sys.argv[1], "rb"); o = int(sys.argv[2])
+m = mmap.mmap(f.fileno(), 0, prot=mmap.PROT_READ)
+print(hashlib.sha512(m[o:o + 4096]).hexdigest()[:16])' "$obj" "$off" 2>&1) || rc=$?
+        if [ "$rc" = 0 ]; then echo "inode $ino @ $off: mmap OK, sha512 $out"
+        else echo "inode $ino @ $off: mmap FAILED (exit $rc${out:+: $out})"; fi
+    done
     echo "--- extents of inode ${blocks%%:*} (flag 'encoded' = compressed)"
     filefrag -v "$(btrfs inspect-internal inode-resolve "${blocks%%:*}" "$vmnt" | head -n1)" | head -n 12
     exit 0

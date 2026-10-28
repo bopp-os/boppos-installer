@@ -191,7 +191,11 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   host's sequential read). Cold single-block reads at the guest's failing offsets on the host return the guest's
   expected hashes, and the file is not compressed (heavily fragmented, though). So the host kernel reads the data
   correctly; the zeros arise between the image file and the guest kernel (QEMU's IDE emulation, guest memory
-  pressure at 4 GiB, or a guest-side kernel path). Next: boot with `BOOT_DRIVE_IF=virtio` and `BOOT_MEM=8192`.
+  pressure at 4 GiB, or a guest-side kernel path). Booting with virtio instead of IDE, or with 8 GiB, still logs
+  10 errors, so neither the emulated disk nor memory is the cause. Remaining suspect: the guest reads composefs
+  objects through mmap page faults (fault-around/readahead), while the host checks used `read()`. A kernel bug in
+  btrfs fs-verity on that path, possibly with this file's fragmented 1-block extents, would explain it. `verify`
+  now repeats the blocks through a cold mmap.
 - Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
   would be left with no boot entry).
 
