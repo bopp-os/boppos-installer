@@ -158,8 +158,9 @@ The profile is `image/` (archiso v91, derived from its baseline/releng profiles)
 `sudo image/build.sh` (mkarchiso in a privileged Arch container; log in `probe-logs/iso-build.log`):
 - UEFI only (`uefi.systemd-boot`), squashfs (xz), Arch `core`/`extra` plus `[bopp-os]` (key `keys/boppos.asc`,
   fingerprint checked by the build).
-- tty1 autologins `liveuser` (sysusers, passwordless sudo), whose login runs `cage -s -- bootc-installer`; tty2
-  has a root shell. `/etc/bootc-installer/live-iso-mode` tells fisherman it is live media, so the installer uses
+- tty1 autologins `liveuser` (sysusers, passwordless sudo), whose login runs `cage -s -- bootc-installer` with its
+  output in the journal (`journalctl -t boppos-installer`); tty2 autologins root for debugging;
+  `systemd-firstboot` is masked (UTC, us keymap). `/etc/bootc-installer/live-iso-mode` tells fisherman it is live media, so the installer uses
   `sudo` (no polkit agent in cage).
 - `/etc/bootc-installer/images.json` lists the four flavors (plasma, gnome, niri, cinnamon) with `znver4`/`v4`/`v3`
   tags to pick by hand until CPU detection exists; each sets composefs, systemd-boot, btrfs and `skip_flatpaks`.
