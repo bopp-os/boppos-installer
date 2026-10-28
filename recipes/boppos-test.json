@@ -3,9 +3,14 @@
   "image": "",
   "filesystem": "btrfs",
   "btrfsSubvolumes": false,
-  "encryption": { "type": "none" },
+  "encryption": {
+    "type": "none"
+  },
   "composeFsBackend": true,
   "bootloader": "systemd",
+  "kernelArgs": [
+    "console=ttyS0"
+  ],
   "genericImage": true,
   "imageType": "bootc",
   "hostname": "boppos-test",
@@ -14,6 +19,8 @@
     "username": "probe",
     "fullname": "Probe User",
     "password": "probe-test-only",
-    "groups": ["wheel"]
+    "groups": [
+      "wheel"
+    ]
   }
 }

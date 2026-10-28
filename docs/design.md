@@ -97,10 +97,12 @@ What it lacks, which BoppOS adds on the fork:
 **Tested 2026-10-28** (`bootloader-probe.sh fisherman`, `boppos` branch of bopp-os/fisherman, loopback disk on the
 host): fisherman installs `cachyos-plasma:znver4` end to end in about 9 minutes (OCI export ~3.5 min, bootc ~6 min)
 with btrfs + composefs + systemd-boot + `genericImage`; same ESP layout and boot entry as section 4a. Three fixes
-were needed on the fork, all candidates for upstream:
+were needed on the fork, all candidates for upstream (the 4th came with the boot test):
 1. `skipFlatpaks` recipe field (an empty list installs Firefox and two GNOME apps, copied from the running machine).
 2. `skopeo copy --remove-signatures` for the composefs OCI export (fails when the store holds cosign signatures).
 3. Hash plaintext passwords before `chpasswd -e` on composefs (the deploy root has `pam.d` but no PAM modules).
+4. `kernelArgs` recipe field (one `bootc --karg` each); fisherman had no way to pass kernel arguments, needed for
+   hardware presets and for `console=ttyS0` in VM tests.
 
 What fisherman does beyond the recipe, for BoppOS to decide on:
 - Copies the running system's Wi-Fi connections and Bluetooth pairings into the target (right on the live ISO,
