@@ -19,7 +19,8 @@ want=3806768589376830FEA123D6CF30985CE903D47C   # also pinned in bopp-os/pkgbuil
 mkdir -p "$out" "$logs"
 rm -rf "$out/work"
 # shellcheck disable=SC2016  # expanded inside the container
-podman run --rm --privileged -v "$here:/profile:ro" -v "$out:/out" -e WANT="$want" "$image" bash -euo pipefail -c '
+# Host networking: rootful podman's default container network did not resolve DNS on the build host.
+podman run --rm --privileged --network host -v "$here:/profile:ro" -v "$out:/out" -e WANT="$want" "$image" bash -euo pipefail -c '
     pacman -Syu --noconfirm --needed archiso >/dev/null
     pacman-key --init >/dev/null 2>&1
     pacman-key --populate archlinux >/dev/null 2>&1
