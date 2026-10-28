@@ -177,11 +177,15 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   Its options are `root=UUID=… rootflags=subvol=/ rw composefs=<id>` plus the `--karg`s and the image's own kargs
   (`mitigations=off`, `amd_pstate=active`, `rd.luks.options=tpm2-device=auto`, …).
 - Boot of the reinstalled disk in QEMU (virt-manager flatpak, edk2 firmware, `-cpu host`): UEFI → systemd-boot →
-  kernel → dracut initramfs → `bootc setup root` → switch root → systemd in the real root. Login prompt not yet
-  seen (the first run stopped at 90 s while services were starting). Without `-cpu host`, systemd dies with SIGILL
+  kernel → dracut initramfs → `bootc setup root` → switch root → systemd in the real root → **`cachyos login:` on
+  ttyS0** (within 240 s). Without `-cpu host`, systemd dies with SIGILL
   in the initramfs: znver4 images need a Zen 4 CPU, so test VMs and the installer's CPU check must match.
 - `dracut-crypt-generator` fails (exit 2) in the initramfs on an unencrypted root, likely from the image's
   `rd.luks.options=tpm2-device=auto` karg. Boot continues.
+- **Open:** during that boot the kernel logs `fs-verity (sda3, inode 88485/68745): FILE CORRUPTED!` for several
+  4 KiB blocks. Every `real_hash` is the SHA-512 of a zero block, so those blocks read back as zeros. Not yet known
+  whether the data is missing on disk (e.g. bootc's `fstrim` through the loop device, or the same-image reinstall
+  reusing the object store) or only in the VM. `bootloader-probe.sh verify` checks the disk on the host.
 - Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
   would be left with no boot entry).
 

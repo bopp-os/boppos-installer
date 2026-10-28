@@ -4,11 +4,14 @@
 #
 #   sudo tests/bootloader-probe.sh {bootloaders|keep-home|all} [image] [workdir]
 #   tests/bootloader-probe.sh boot [disk-image]     (as your user, no sudo)
+#   sudo tests/bootloader-probe.sh verify [disk-image]
 #
 # boot: boots a disk the other modes made (default /var/tmp/boppos-probe/disk-keephome.img) in QEMU from the
 #       virt-manager flatpak's QEMU extension (FLATPAK_APP to change it), read-only via snapshot=on, for
 #       BOOT_TIMEOUT seconds (default 240), and looks for a login prompt on the serial console.
 #       Log: /tmp/boppos-probe-boot.log.
+# verify: mounts the disk read-only, reads every composefs object and lists the ones that fail (fs-verity or I/O),
+#         resolves VERIFY_INODES (default: the ones from the first boot log) and shows the first bad file's extents.
 #
 # [image] defaults to the image the host is booted from (`bootc status`), so a znver4 host tests the znver4 image.
 # [workdir] defaults to /var/tmp/boppos-probe: on disk, since /tmp is tmpfs on CachyOS.
@@ -60,6 +63,38 @@ if [ "$MODE" = boot ]; then
     else echo "boot: NO login prompt"; tail -n 30 "$log"; fi
     exit 0
 fi
+
+# verify mode: read every composefs object on a probe disk (read-only) and report fs-verity failures.
+if [ "$MODE" = verify ]; then
+    disk="${2:-/var/tmp/boppos-probe/disk-keephome.img}"
+    vmnt=$(mktemp -d /var/tmp/boppos-verify.XXXXXX)
+    LOOPDEV=$(losetup -r --find --show --partscan "$disk")
+    trap 'umount "$vmnt" 2>/dev/null; losetup -d "$LOOPDEV"; rmdir "$vmnt"' EXIT
+    udevadm settle 2>/dev/null || true
+    vroot=""
+    for p in $(lsblk -nrpo NAME,TYPE "$LOOPDEV" | awk '$2=="part"{print $1}'); do
+        [ "$(blkid -p -o value -s PART_ENTRY_TYPE "$p")" = 4f68bce3-e8cd-4db1-96e7-fbcaf984b709 ] && vroot="$p"
+    done
+    [ -n "$vroot" ] || { echo "no root partition on $disk"; exit 2; }
+    mount -o ro "$vroot" "$vmnt"
+    echo "=== verify $disk ($vroot)"
+    for ino in ${VERIFY_INODES:-88485 68745}; do
+        echo "inode $ino: $(btrfs inspect-internal inode-resolve "$ino" "$vmnt" 2>&1 | tr '\n' ' ')"
+    done
+    total=$(find "$vmnt/composefs/objects" -type f | wc -l)
+    echo "reading $total composefs objects (a few minutes)..."
+    bad=$(find "$vmnt/composefs/objects" -type f -exec sh -c \
+        'for f; do cat "$f" >/dev/null 2>&1 || echo "$f"; done' sh {} + | sed "s|^$vmnt/||")
+    echo "unreadable (fs-verity or I/O error): $(printf '%s' "$bad" | grep -c . || true)"
+    printf '%s\n' "$bad" | head -n 20
+    # For the first bad file: does its btrfs extent map show holes (unwritten data)?
+    first=$(printf '%s\n' "$bad" | head -n1)
+    if [ -n "$first" ]; then
+        echo "--- extent map of $first"; filefrag -v "$vmnt/$first" | head -n 25
+    fi
+    echo "--- image file holes: $(du -h "$disk" | cut -f1) used of $(du -h --apparent-size "$disk" | cut -f1)"
+    exit 0
+fi
 # Default image: the one this host is booted from (e.g. ghcr.io/bopp-os/cachyos-plasma:znver4).
 booted_image() {
     bootc status --format=json 2>/dev/null |
@@ -79,7 +114,7 @@ ROOT_GUID=4f68bce3-e8cd-4db1-96e7-fbcaf984b709   # DPS root x86-64
 LOOPDEV=""
 read -ra EXTRA_ARGS <<<"${PROBE_EXTRA_ARGS:-}"
 
-case "$MODE" in bootloaders|keep-home|all) ;; *) echo "usage: $0 {bootloaders|keep-home|all} [image] [workdir] | $0 boot [disk-image]"; exit 2;; esac
+case "$MODE" in bootloaders|keep-home|all) ;; *) echo "usage: $0 {bootloaders|keep-home|all} [image] [workdir] | $0 {boot|verify} [disk-image]"; exit 2;; esac
 mkdir -p "$WORK"
 echo "mode=$MODE image=$IMAGE work=$WORK"
 podman pull "$IMAGE"
