@@ -6,7 +6,8 @@
 #   tests/bootloader-probe.sh boot [disk-image]     (as your user, no sudo)
 #   sudo tests/bootloader-probe.sh verify [disk-image]
 #
-# boot: boots a disk the other modes made (default /var/tmp/boppos-probe/disk-keephome.img) in QEMU from the
+# boot: boots a disk the other modes made (default /var/tmp/boppos-probe/disk-keephome.img), or an installer .iso
+#       as a CD (its journal comes over the serial port), in QEMU from the
 #       virt-manager flatpak's QEMU extension (FLATPAK_APP to change it), read-only via snapshot=on, for
 #       BOOT_TIMEOUT seconds (default 240), and looks for a login prompt on the serial console. BOOT_MEM (MiB,
 #       default 4096) and BOOT_DRIVE_IF (ide or virtio, default ide) pick the VM memory and disk type.
@@ -68,9 +69,12 @@ if [ "$MODE" = boot ]; then
         echo "qemu=${q:-MISSING} firmware=${fw:-MISSING}"
         [ -n "$q" ] && [ -n "$fw" ] || { find "${q%/bin/*}" -iname "*edk2*" -o -iname "*ovmf*" 2>/dev/null | head -20; exit 3; }
         [ -r "$1" ] || { echo "disk not visible inside the sandbox: $1"; exit 3; }
+        case "$1" in
+            *.iso) set -- -cdrom "$1" ;;
+            *) set -- -drive "file=$1,format=raw,snapshot=on,if=$BOOT_DRIVE_IF" ;;
+        esac
         timeout "$BOOT_TIMEOUT" "$q" -m "$BOOT_MEM" -enable-kvm -cpu host -nographic \
-            -drive if=pflash,format=raw,readonly=on,file="$fw" \
-            -drive file="$1",format=raw,snapshot=on,if="$BOOT_DRIVE_IF" </dev/null
+            -drive if=pflash,format=raw,readonly=on,file="$fw" "$@" </dev/null
         exit 0' sh "$disk" >"$log" 2>&1 || true
     head -n3 "$log"
     if grep -q "login:" "$log"; then echo "boot: reached login"
@@ -78,6 +82,11 @@ if [ "$MODE" = boot ]; then
     echo "fs-verity errors in the boot log: $(grep -c "FILE CORRUPTED" "$log" || true)"
     grep -o 'inode [0-9]*): FILE CORRUPTED! pos=[0-9]*' "$log" | sed 's/): FILE CORRUPTED! pos=/ @ /' | sort -u |
         tr '\n' ',' | sed 's/,$/\n/' || true
+    # The installer ISO copies its journal to the serial port; show the kiosk session's part of it.
+    case "$disk" in
+        *.iso) echo "--- installer session (cage, installer, errors)"
+               grep -a -E 'boppos-installer|cage|Traceback|Error' "$log" | tail -n 40 || true ;;
+    esac
     exit 0
 fi
 
