@@ -1,0 +1,7 @@
+{
+  "name": "BoppOS",
+  "id": "boppos",
+  "vendor": "BoppOS",
+  "home_url": "https://github.com/bopp-os",
+  "default_hostname": "boppos"
+}
