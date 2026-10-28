@@ -279,7 +279,8 @@ probe_fisherman() {
     if ! podman run --rm -v "$src:/src:ro" -v "$WORK/go:/go" -w /src/fisherman \
         -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e GOCACHE=/go/cache "$GO_IMAGE" sh -c '
             unformatted=$(gofmt -l cmd internal); [ -z "$unformatted" ] || echo "gofmt wants changes in: $unformatted"
-            go test ./internal/recipe/ && go build -o /go/bin/fisherman-boppos ./cmd/fisherman'; then
+            go test ./internal/recipe/ && go test -run TestSkopeoExportOCI ./internal/install/ \
+                && go build -o /go/bin/fisherman-boppos ./cmd/fisherman'; then
         echo "build FAILED"; return
     fi
     new_disk "$img"
