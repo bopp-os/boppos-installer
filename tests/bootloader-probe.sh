@@ -39,14 +39,16 @@ if [ "$MODE" = boot ]; then
     [ "$(id -u)" = 0 ] && echo "warning: run boot mode as your user; flatpak apps are meant to run unprivileged"
     [ -r "$disk" ] || { echo "cannot read $disk"; exit 2; }
     echo "booting $disk with $app (90 s, log $log)"
-    # Find QEMU and its UEFI firmware inside the sandbox (the QEMU extension mounts under /app/extensions).
+    # Find QEMU and its UEFI firmware inside the sandbox (virt-manager's QEMU extension is at /app/lib/extensions).
     # shellcheck disable=SC2016  # expanded inside the sandbox
     flatpak run --device=all --filesystem="$(dirname "$disk")":ro --command=sh "$app" -c '
-        q=$(command -v qemu-system-x86_64 || ls /app/extensions/*/bin/qemu-system-x86_64 2>/dev/null | head -n1)
-        fw=$(ls /app/extensions/*/share/qemu/edk2-x86_64-code.fd /app/share/qemu/edk2-x86_64-code.fd \
-             /usr/share/qemu/edk2-x86_64-code.fd 2>/dev/null | head -n1)
+        q=$(command -v qemu-system-x86_64 || ls /app/lib/extensions/bin/qemu-system-x86_64 \
+            /app/extensions/*/bin/qemu-system-x86_64 2>/dev/null | head -n1)
+        fw=$(find "${q%/bin/*}/share" /app/share /usr/share \( -name "edk2-x86_64-code.fd*" -o -name "OVMF_CODE*.fd" \) \
+             2>/dev/null | head -n1)
+        case "$fw" in *.bz2) bunzip2 -c "$fw" >/tmp/edk2-code.fd && fw=/tmp/edk2-code.fd ;; esac
         echo "qemu=${q:-MISSING} firmware=${fw:-MISSING}"
-        [ -n "$q" ] && [ -n "$fw" ] || { ls -R /app/extensions 2>/dev/null | head -40; exit 3; }
+        [ -n "$q" ] && [ -n "$fw" ] || { find "${q%/bin/*}" -iname "*edk2*" -o -iname "*ovmf*" 2>/dev/null | head -20; exit 3; }
         [ -r "$1" ] || { echo "disk not visible inside the sandbox: $1"; exit 3; }
         timeout 90 "$q" -m 4096 -enable-kvm -nographic \
             -drive if=pflash,format=raw,readonly=on,file="$fw" -drive file="$1",format=raw,snapshot=on </dev/null
