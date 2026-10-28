@@ -3,5 +3,6 @@
   "id": "boppos",
   "vendor": "BoppOS",
   "home_url": "https://github.com/bopp-os",
-  "default_hostname": "boppos"
+  "default_hostname": "boppos",
+  "logo": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png"
 }

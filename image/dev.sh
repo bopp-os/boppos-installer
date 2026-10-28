@@ -20,6 +20,7 @@ img=localhost/boppos-installer-dev
 siblings=$(dirname "$repo")
 installer_src="${INSTALLER_SRC:-$siblings/bootc-installer}"
 fisherman_src="${FISHERMAN_SRC:-$siblings/fisherman}"
+tools_src="${BOPPOS_TOOLS_SRC:-$siblings/boppos-tools}"   # the BoppOS icons (the ISO gets them from boppos-artwork)
 pkgbuilds_src="${PKGBUILDS_SRC:-$siblings/pkgbuilds}"
 
 cmd="${1:-run}"
@@ -99,6 +100,14 @@ in_container() {  # in_container <podman flags> -- <command...>
     [ -S "$sock" ] || { echo "no Wayland socket at $sock"; exit 2; }
     compgen -G "$pkgs/*.pkg.tar.zst" >/dev/null || { echo "no packages in $pkgs; run: $0 packages"; exit 2; }
     mkdir -p "$dev/home" "$repo/probe-logs"
+    # The BoppOS icon at the path branding.json names, from the local boppos-tools checkout.
+    local icon_mount=()
+    local icon=artwork/icons/hicolor/512x512/apps/boppos-icon.png
+    if [ -f "$tools_src/$icon" ]; then
+        icon_mount=(-v "$tools_src/$icon:/usr/share/icons/hicolor/512x512/apps/boppos-icon.png:ro")
+    else
+        echo "note: $tools_src/$icon not found; the installer will show no BoppOS icon"
+    fi
     # The desktop's socket gets its own name: cage creates a socket of its own, and takes wayland-0 first.
     # unmask=/sys/firmware: podman hides it by default, and the installer refuses to start without /sys/firmware/efi
     # ("It did not start in UEFI mode"). Read-only sysfs; a normal user cannot write EFI variables.
@@ -107,6 +116,7 @@ in_container() {  # in_container <podman flags> -- <command...>
         -v "$pkgs:/pkgs:ro" \
         -v "$here/airootfs/etc/bootc-installer:/etc/bootc-installer:ro" \
         -v "$dev/home:/root" \
+        "${icon_mount[@]}" \
         -v "$sock:/tmp/xdg/host-0" \
         -e XDG_RUNTIME_DIR=/tmp/xdg -e WAYLAND_DISPLAY=host-0 \
         -e WLR_RENDERER=pixman -e GSK_RENDERER=cairo \

@@ -16,7 +16,8 @@ cage
 mesa
 adwaita-fonts
 noto-fonts
-# Installer (bopp-os repo); fisherman pulls podman, skopeo and the disk tools
+# Installer (bopp-os repo); fisherman pulls podman, skopeo and the disk tools; boppos-artwork has the BoppOS icons
+boppos-artwork
 boppos-bootc-installer
 boppos-fisherman
 efibootmgr
