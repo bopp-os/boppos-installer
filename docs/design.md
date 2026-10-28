@@ -169,8 +169,25 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
 - `to-filesystem --replace=alongside` with the same image **fails** as predicted: `Writing composefs state: Failed to
   create symlink for /var: File exists`. It fails *after* wiping the ESP's `EFI/` and reinstalling systemd-boot, so
   `EFI/Microsoft` is gone even though the install failed. The old deployment stays bootable from the rewritten ESP.
-- Home and `/etc` were untouched because bootc stopped before copying; the probe now retries after moving
-  `state/deploy/<id>` aside to test a successful reinstall.
+- Retry after moving `state/deploy/<id>` aside (keeping `state/os/default/var`): reinstall **succeeds**.
+  `/var/home` is **kept**; the old deployment's `/etc` change is **not** carried over (no merge on composefs);
+  the moved-aside old deployment stays on disk.
+- `loader.conf` has `timeout` commented out, so the systemd-boot menu is hidden unless Space is held.
+- The BLS entry is titled "Arch Linux" (file `bootc_arch-<id>-1.conf`): bootc takes it from the image's os-release.
+  Its options are `root=UUID=… rootflags=subvol=/ rw composefs=<id>` plus the `--karg`s and the image's own kargs
+  (`mitigations=off`, `amd_pstate=active`, `rd.luks.options=tpm2-device=auto`, …).
+- Not yet tested: booting the result (needs `qemu-base` + `edk2-ovmf` on the host), and a reinstall with a
+  *different* image digest (no collision, but the old `state/deploy/<oldid>` would be left with no boot entry).
+
+Installer steps for a composefs reinstall that keeps home, from these results:
+1. Copy every `EFI/<vendor>` except `systemd`, `BOOT`, `Linux` off the ESP; put them back after bootc.
+2. Copy the `/etc` files to keep (`passwd`, `shadow`, `group`, `gshadow`, `subuid`/`subgid`,
+   `NetworkManager/system-connections`, `hostname`, `locale.conf`, `vconsole.conf`) from the old
+   `state/deploy/<oldid>/etc`.
+3. Move every old `state/deploy/<id>` aside, then run `to-filesystem --replace=alongside --composefs-backend
+   --bootloader systemd`.
+4. Merge the saved `/etc` files into the new `state/deploy/<newid>/etc`, then delete the old deployment dirs.
+5. Write `timeout 3` into `loader/loader.conf` so the rollback entry is visible.
 
 ## 4b. Reinstalling over an old bootc system and keeping home
 
