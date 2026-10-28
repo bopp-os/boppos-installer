@@ -2,7 +2,7 @@
 # Probes for `bootc install` on the BoppOS image. Needs root and podman (run on the host or in CI, not in the
 # Litterbox). Writes only to sparse loopback files in the work dir.
 #
-#   sudo tests/bootloader-probe.sh {bootloaders|keep-home|all} [image] [workdir]
+#   sudo tests/bootloader-probe.sh {bootloaders|keep-home|fisherman|all} [image] [workdir]
 #   tests/bootloader-probe.sh boot [disk-image]     (as your user, no sudo)
 #   sudo tests/bootloader-probe.sh verify [disk-image]
 #
@@ -14,6 +14,9 @@
 # verify: mounts the disk read-only, reads every composefs object and lists the ones that fail (fs-verity or I/O),
 #         runs btrfs check --readonly, identifies VERIFY_INODES (default: the ones from the first boot log), and
 #         repeats the failing blocks with read() and mmap. VERIFY_SCAN=0 skips the full read.
+# fisherman: builds the forked installer backend (FISHERMAN_SRC, default ../fisherman next to this repo) in a Go
+#         container (GO_IMAGE), installs [image] to disk-fisherman.img with recipes/boppos-test.json, and prints the
+#         partition table, ESP and boot entries. Run it from the main checkout so the default source path resolves.
 #
 # [image] defaults to the image the host is booted from (`bootc status`), so a znver4 host tests the znver4 image.
 # [workdir] defaults to /var/tmp/boppos-probe: on disk, since /tmp is tmpfs on CachyOS.
@@ -157,6 +160,7 @@ if [ -z "$IMAGE" ]; then
 fi
 WORK="${3:-/var/tmp/boppos-probe}"
 OVMF="${OVMF:-/usr/share/edk2/x64/OVMF_CODE.4m.fd}"
+GO_IMAGE="${GO_IMAGE:-docker.io/library/golang:1.25}"  # builds fisherman in fisherman mode
 KEEP_HOME_BOOTLOADER="${KEEP_HOME_BOOTLOADER:-systemd}"
 ESP_GUID=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
 XBOOTLDR_GUID=bc13c2ff-59e6-4262-a352-b275fd6f7172
@@ -164,7 +168,7 @@ ROOT_GUID=4f68bce3-e8cd-4db1-96e7-fbcaf984b709   # DPS root x86-64
 LOOPDEV=""
 read -ra EXTRA_ARGS <<<"${PROBE_EXTRA_ARGS:-}"
 
-case "$MODE" in bootloaders|keep-home|all) ;; *) echo "usage: $0 {bootloaders|keep-home|all} [image] [workdir] | $0 {boot|verify} [disk-image]"; exit 2;; esac
+case "$MODE" in bootloaders|keep-home|fisherman|all) ;; *) echo "usage: $0 {bootloaders|keep-home|fisherman|all} [image] [workdir] | $0 {boot|verify} [disk-image]"; exit 2;; esac
 mkdir -p "$WORK"
 echo "mode=$MODE image=$IMAGE work=$WORK"
 podman pull "$IMAGE"
@@ -255,6 +259,56 @@ probe_bootloaders() {
         cleanup
         boot_in_qemu "$img" "$WORK/boot-$bl.log"
     done
+}
+
+# Build fisherman (the forked installer backend) from FISHERMAN_SRC in a Go container, then install the image to a
+# fresh loopback disk with recipes/boppos-test.json. fisherman runs with a stripped environment so its live-session
+# steps (WirePlumber audio names) cannot touch a real user's session on the host.
+probe_fisherman() {
+    local src="${FISHERMAN_SRC:-$(cd "$(dirname "$0")/../.." && pwd)/fisherman}"
+    local template recipe="$WORK/fisherman-recipe.json" bin="$WORK/go/bin/fisherman-boppos"
+    local img="$WORK/disk-fisherman.img" log="$WORK/fisherman-install.log" rc=0 esp m
+    template="$(cd "$(dirname "$0")/.." && pwd)/recipes/boppos-test.json"
+    echo "=== fisherman ($src, branch $(git -C "$src" branch --show-current 2>/dev/null || echo '?'))"
+    [ -f "$src/fisherman/go.mod" ] || { echo "no fisherman checkout at $src (set FISHERMAN_SRC)"; return; }
+    for m in skopeo sfdisk partprobe mkfs.btrfs mkfs.fat blkid udevadm; do
+        command -v "$m" >/dev/null || { echo "missing host tool fisherman needs: $m"; return; }
+    done
+    mkdir -p "$WORK/go" "$WORK/fisherman-home"
+    echo "--- build (gofmt, recipe tests, go build)"
+    if ! podman run --rm -v "$src:/src:ro" -v "$WORK/go:/go" -w /src/fisherman \
+        -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e GOCACHE=/go/cache "$GO_IMAGE" sh -c '
+            unformatted=$(gofmt -l cmd internal); [ -z "$unformatted" ] || echo "gofmt wants changes in: $unformatted"
+            go test ./internal/recipe/ && go build -o /go/bin/fisherman-boppos ./cmd/fisherman'; then
+        echo "build FAILED"; return
+    fi
+    new_disk "$img"
+    python3 -I -c 'import json, sys
+r = json.load(open(sys.argv[1])); r["disk"], r["image"] = sys.argv[2], sys.argv[3]
+json.dump(r, open(sys.argv[4], "w"), indent=1)' "$template" "$LOOPDEV" "$IMAGE" "$recipe"
+    echo "--- recipe: disk=$LOOPDEV image=$IMAGE"
+    env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME="$WORK/fisherman-home" LANG=C.UTF-8 \
+        "$bin" validate "$recipe" || { echo "recipe validation FAILED"; cleanup; return; }
+    echo "--- install (log $log)"
+    env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME="$WORK/fisherman-home" LANG=C.UTF-8 \
+        "$bin" "$recipe" >"$log" 2>&1 || rc=$?
+    echo "fisherman exit: $rc"; tail -n 25 "$log"
+    # Unmount anything fisherman left mounted from this loop device only, deepest first.
+    findmnt -rno TARGET,SOURCE | awk -v d="$LOOPDEV" 'index($2, d) == 1 {print $1}' | sort -r |
+        while read -r m; do umount "$m" || true; done
+    sfdisk -l "$LOOPDEV" || true
+    esp=$(part_by_guid "$ESP_GUID")
+    if [ -n "$esp" ] && mkdir -p "$WORK/esp" && mount -o ro "$esp" "$WORK/esp"; then
+        echo "--- ESP"; find "$WORK/esp" -maxdepth 3 | sed "s|^$WORK/esp|.|"
+        for m in "$WORK/esp/loader/loader.conf" "$WORK"/esp/loader/entries/*.conf; do
+            [ -f "$m" ] && { echo "--- ${m#"$WORK"/esp/}"; cat "$m"; }
+        done
+        umount "$WORK/esp"
+    else
+        echo "no ESP found"
+    fi
+    cleanup
+    echo "boot it with: tests/bootloader-probe.sh boot $img"
 }
 
 probe_keep_home() {
@@ -356,6 +410,7 @@ preflight
 case "$MODE" in
     bootloaders) probe_bootloaders ;;
     keep-home) probe_keep_home ;;
+    fisherman) probe_fisherman ;;
     all) probe_bootloaders; probe_keep_home ;;
 esac
 echo "Done. Logs in $WORK"

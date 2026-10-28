@@ -1,0 +1,19 @@
+{
+  "disk": "",
+  "image": "",
+  "filesystem": "btrfs",
+  "btrfsSubvolumes": false,
+  "encryption": { "type": "none" },
+  "composeFsBackend": true,
+  "bootloader": "systemd",
+  "genericImage": true,
+  "imageType": "bootc",
+  "hostname": "boppos-test",
+  "skipFlatpaks": true,
+  "user": {
+    "username": "probe",
+    "fullname": "Probe User",
+    "password": "probe-test-only",
+    "groups": ["wheel"]
+  }
+}
