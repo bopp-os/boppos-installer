@@ -1,0 +1,20 @@
+# Dev image for image/dev.sh: the build tools and the installer's runtime dependencies, so a run only has to build and
+# install the local packages.
+FROM docker.io/library/archlinux:latest
+
+RUN pacman -Syu --noconfirm --needed base-devel git meson go blueprint-compiler glib2-devel gettext \
+        python python-pytest python-gobject python-requests gtk4 libadwaita gnome-desktop-4 libgweather-4 libnm \
+        gstreamer gst-plugins-base gst-plugins-good polkit hicolor-icon-theme adwaita-fonts noto-fonts cage mesa \
+        podman skopeo util-linux parted dosfstools btrfs-progs e2fsprogs cryptsetup device-mapper psmisc openssl \
+        shadow tar efibootmgr sudo; \
+    command -v meson go blueprint-compiler cage >/dev/null
+
+# pacman's post-install hooks refuse to run inside a rootless container ("could not isolate the network"), so do
+# the ones the installer depends on by hand: compiled GSettings schemas, icon cache, fonts, MIME types.
+RUN glib-compile-schemas /usr/share/glib-2.0/schemas; \
+    gtk4-update-icon-cache -qtf /usr/share/icons/hicolor; \
+    update-mime-database /usr/share/mime; \
+    fc-cache -f; \
+    true
+
+RUN useradd -m builder && echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder

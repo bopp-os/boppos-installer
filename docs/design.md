@@ -166,6 +166,9 @@ The profile is `image/` (archiso v91, derived from its baseline/releng profiles)
   tags to pick by hand until CPU detection exists; each sets composefs, systemd-boot, btrfs and `skip_flatpaks`.
 - Memory floor (4c): `copytoram=n`, zram up to 4 GB only on machines with ≤ 8 GB, `/tmp` capped at 25%.
 - Second boot entry with `console=ttyS0` for VM tests.
+- Local loop (nothing pushed): `image/dev.sh run` builds both packages from the local checkouts in a rootless dev
+  container and starts the installer under cage in a window on the desktop; `image/dev.sh packages` plus
+  `sudo LOCAL_PKGS=$PWD/.dev/pkgs image/build.sh` puts the same packages in an ISO.
 - Needed in the packages first: UI pass-through of `skipFlatpaks`/`kernelArgs`, and fisherman excluding
   archiso's boot medium (`/run/archiso/bootmnt`) from install targets.
 
