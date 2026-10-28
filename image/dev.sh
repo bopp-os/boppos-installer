@@ -122,7 +122,7 @@ in_container() {  # in_container <podman flags> -- <command...>
         -v "$sock:/tmp/xdg/host-0" \
         -e XDG_RUNTIME_DIR=/tmp/xdg -e WAYLAND_DISPLAY=host-0 \
         -e WLR_RENDERER=pixman -e GSK_RENDERER=cairo \
-        -e BOOTC_DEMO=1 \
+        -e BOOTC_DEMO=1 -e VANILLA_NO_APPLY_XKB=1 \
         "$img" bash -c '
             pacman -U --noconfirm --needed /pkgs/*.pkg.tar.zst >/tmp/pacman.log 2>&1
             command -v bootc-installer >/dev/null || { tail -n 20 /tmp/pacman.log; exit 1; }

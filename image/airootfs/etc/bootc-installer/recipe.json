@@ -8,6 +8,15 @@
       "template": "welcome",
       "protected": true
     },
+    "language": {
+      "template": "language"
+    },
+    "keyboard": {
+      "template": "keyboard"
+    },
+    "timezone": {
+      "template": "timezone"
+    },
     "image": {
       "template": "image"
     },

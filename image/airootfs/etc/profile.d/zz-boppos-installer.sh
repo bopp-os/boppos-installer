@@ -4,5 +4,7 @@
 if [ "$USER" = liveuser ] && [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     # Software cursor: with a virtual GPU (virtio) the hardware cursor plane shows the pointer upside down.
     export WLR_NO_HARDWARE_CURSORS=1
+    # The keyboard page must not try to apply the layout through GNOME settings (the kiosk has none).
+    export VANILLA_NO_APPLY_XKB=1
     exec systemd-cat -t boppos-installer cage -s -- bootc-installer
 fi
