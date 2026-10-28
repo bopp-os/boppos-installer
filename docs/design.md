@@ -289,6 +289,26 @@ to drop the old deployment.
 
 `tests/bootloader-probe.sh keep-home` tests mode 1 and the ESP behavior on a loopback disk.
 
+## 4c. Memory budget: the installer must work with 4 GB of RAM
+
+Decided 2026-10-27. Handhelds with 16 GB on paper can leave the OS about 8 GB once the firmware reserves memory
+for the iGPU (e.g. ROG Ally with an 8 GB reservation); older 8 GB models leave less. The installer targets **4 GB
+usable** for margin. A live ISO runs from RAM and the BoppOS image is ~8 GB compressed, so:
+
+1. **No image data in RAM.** Pull, OCI export and bootc's temporary files all go on the target disk. fisherman
+   already does this on a live system: when `/var` is tmpfs or overlay it puts its scratch dir at
+   `<target>/.fisherman-scratch` (`cmd/fisherman/main.go` `prepareScratchDir`), which holds the composefs OCI export
+   (`oci-cache`), and its tests show the pull as `podman --root <scratch>/root pull`. To verify in the 4 GB test.
+2. **Partition and mount the target before downloading anything.** The download can only start once the disk exists.
+3. **Live system stays small:** squashfs ≤ ~1.5 GB, read from the boot medium (archiso `copytoram=n`, not the
+   default of copying it into RAM when memory allows), zram swap enabled, `/tmp` capped.
+4. **Installer UI is light:** cage + one GTK4 app, no desktop, no browser, no Flatpak runtime.
+5. **Test:** the CI/QEMU smoke test boots the ISO with `-m 4096` and runs a full `--autoinstall` install; the
+   install fails the test if the kernel's OOM killer fires or peak memory (from `/proc/pressure/memory` and
+   `MemAvailable`) leaves under ~300 MB.
+6. **Target system, not just the installer:** the first boot of the installed system should also be checked at
+   4 GB (the probe's `boot` mode already uses `BOOT_MEM=4096` by default; that boot reached login).
+
 ## 5. Repo layout
 
 Three repos under `bopp-os`:
