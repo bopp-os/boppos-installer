@@ -44,7 +44,7 @@ if [ "$MODE" = boot ]; then
     flatpak run --device=all --filesystem="$(dirname "$disk")":ro --command=sh "$app" -c '
         q=$(command -v qemu-system-x86_64 || ls /app/lib/extensions/bin/qemu-system-x86_64 \
             /app/extensions/*/bin/qemu-system-x86_64 2>/dev/null | head -n1)
-        fw=$(find "${q%/bin/*}/share" /app/share /usr/share \( -name "edk2-x86_64-code.fd*" -o -name "OVMF_CODE*.fd" \) \
+        fw=$(find "${q%/bin/*}" /app/share /usr/share \( -name "edk2-x86_64-code.fd*" -o -name "OVMF_CODE*.fd" \) \
              2>/dev/null | head -n1)
         case "$fw" in *.bz2) bunzip2 -c "$fw" >/tmp/edk2-code.fd && fw=/tmp/edk2-code.fd ;; esac
         echo "qemu=${q:-MISSING} firmware=${fw:-MISSING}"
