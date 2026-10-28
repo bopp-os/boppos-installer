@@ -100,8 +100,10 @@ in_container() {  # in_container <podman flags> -- <command...>
     compgen -G "$pkgs/*.pkg.tar.zst" >/dev/null || { echo "no packages in $pkgs; run: $0 packages"; exit 2; }
     mkdir -p "$dev/home" "$repo/probe-logs"
     # The desktop's socket gets its own name: cage creates a socket of its own, and takes wayland-0 first.
+    # unmask=/sys/firmware: podman hides it by default, and the installer refuses to start without /sys/firmware/efi
+    # ("It did not start in UEFI mode"). Read-only sysfs; a normal user cannot write EFI variables.
     # shellcheck disable=SC2016  # expanded inside the container
-    podman run --rm --security-opt label=disable "${flags[@]}" \
+    podman run --rm --security-opt label=disable --security-opt unmask=/sys/firmware "${flags[@]}" \
         -v "$pkgs:/pkgs:ro" \
         -v "$here/airootfs/etc/bootc-installer:/etc/bootc-installer:ro" \
         -v "$dev/home:/root" \
