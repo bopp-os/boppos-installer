@@ -289,23 +289,41 @@ to drop the old deployment.
 
 `tests/bootloader-probe.sh keep-home` tests mode 1 and the ESP behavior on a loopback disk.
 
-## 4c. Memory budget: the installer must work with 4 GB of RAM
+## 4c. Memory budget: 4 GB floor, use more when present
 
-Decided 2026-10-27. Handhelds with 16 GB on paper can leave the OS about 8 GB once the firmware reserves memory
+Decided 2026-10-27. 4 GB is the floor every step must work at; above it the installer uses spare memory for speed,
+never for correctness. "Usable" means `MemAvailable` when the installer starts, which already excludes the iGPU
+reservation.
+
+Using more when present (each step falls back to the floor behavior, and is decided at runtime, not at build time):
+- **Automatic, nothing to do:** the kernel keeps downloaded layers and the OCI export in the page cache, so with
+  more RAM bootc's re-reads come from memory instead of the disk.
+- **≥ 8 GB usable: run the live system from RAM** (copy the ~1.5 GB squashfs at boot). The UI gets faster and the
+  USB stick can be pulled once the installer is up. archiso's `copytoram` decides this before userspace starts, so
+  this needs a boot hook that checks free memory against our threshold (archiso's own `auto` rule: to verify).
+- **≥ 8 GB usable: no zram swap**, since nothing needs it; below that, zram on.
+- **≥ 24 GB usable: scratch (`oci-cache`, ~8 GB of compressed layers) on tmpfs** instead of the target disk. Saves
+  about 8 GB of writes and reads on the target. Small gain on NVMe, more on SATA/eMMC. Optional; a change in
+  fisherman's `prepareScratchDir`.
+- Not worth it: more parallel layer downloads (network-bound, not memory-bound), or holding the pulled image
+  in RAM (the pull is ~2x the compressed size unpacked).
+
+The floor rules: Handhelds with 16 GB on paper can leave the OS about 8 GB once the firmware reserves memory
 for the iGPU (e.g. ROG Ally with an 8 GB reservation); older 8 GB models leave less. The installer targets **4 GB
 usable** for margin. A live ISO runs from RAM and the BoppOS image is ~8 GB compressed, so:
 
-1. **No image data in RAM.** Pull, OCI export and bootc's temporary files all go on the target disk. fisherman
+1. **No image data in RAM** (below the 24 GB tier above). Pull, OCI export and bootc's temporary files all go on the target disk. fisherman
    already does this on a live system: when `/var` is tmpfs or overlay it puts its scratch dir at
    `<target>/.fisherman-scratch` (`cmd/fisherman/main.go` `prepareScratchDir`), which holds the composefs OCI export
    (`oci-cache`), and its tests show the pull as `podman --root <scratch>/root pull`. To verify in the 4 GB test.
 2. **Partition and mount the target before downloading anything.** The download can only start once the disk exists.
-3. **Live system stays small:** squashfs ≤ ~1.5 GB, read from the boot medium (archiso `copytoram=n`, not the
-   default of copying it into RAM when memory allows), zram swap enabled, `/tmp` capped.
+3. **Live system stays small:** squashfs ≤ ~1.5 GB, read from the boot medium below 8 GB usable (copied to RAM
+   only at the 8 GB tier above), zram swap enabled, `/tmp` capped.
 4. **Installer UI is light:** cage + one GTK4 app, no desktop, no browser, no Flatpak runtime.
 5. **Test:** the CI/QEMU smoke test boots the ISO with `-m 4096` and runs a full `--autoinstall` install; the
    install fails the test if the kernel's OOM killer fires or peak memory (from `/proc/pressure/memory` and
-   `MemAvailable`) leaves under ~300 MB.
+   `MemAvailable`) leaves under ~300 MB. A second run at `-m 32768` covers the RAM tiers (squashfs copied to RAM,
+   no zram, scratch on tmpfs) and must install the same result.
 6. **Target system, not just the installer:** the first boot of the installed system should also be checked at
    4 GB (the probe's `boot` mode already uses `BOOT_MEM=4096` by default; that boot reached login).
 
