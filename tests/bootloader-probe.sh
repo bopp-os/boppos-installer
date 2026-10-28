@@ -197,6 +197,9 @@ bootc_run() {
 
 new_disk() {  # new_disk <file>: fresh sparse image attached as $LOOPDEV
     rm -f "$1"; truncate -s 40G "$1"
+    # Readable only by the calling user (boot mode runs as them): installs can hold passwords and keys.
+    chmod 600 "$1"
+    if [ -n "${SUDO_UID:-}" ]; then chown "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$1"; fi
     LOOPDEV=$(losetup --find --show --partscan "$1")
 }
 
@@ -298,10 +301,21 @@ json.dump(r, open(sys.argv[4], "w"), indent=1)' "$template" "$LOOPDEV" "$IMAGE" 
         "$bin" validate "$recipe" || { echo "recipe validation FAILED"; cleanup; return; }
     echo "--- install (log $log)"
     # Private mount namespace: fisherman's mounts (the target, and a bind mount over /var/tmp during the OCI
-    # export) stay invisible to the rest of the host and vanish when it exits.
-    unshare --mount --propagation private \
+    # export) stay invisible to the rest of the host and vanish when it exits. Inside it, empty folders cover the
+    # host's Wi-Fi connections and Bluetooth pairings: fisherman copies those into the installed system (meant for
+    # a live ISO session), which on a host would put real credentials into the test image.
+    mkdir -p "$WORK/empty"
+    # shellcheck disable=SC2016  # expanded by the inner sh
+    unshare --mount --propagation private sh -c '
+        for d in /etc/NetworkManager/system-connections /var/lib/bluetooth; do
+            [ -d "$d" ] && mount --bind "$1" "$d"
+        done
+        shift; exec "$@"' sh "$WORK/empty" \
         env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME="$WORK/fisherman-home" LANG=C.UTF-8 \
         "$bin" "$recipe" >"$log" 2>&1 || rc=$?
+    if grep -q -E 'copied (WiFi connections|Bluetooth pairings)' "$log"; then
+        echo "WARNING: fisherman copied host Wi-Fi or Bluetooth data into $img; delete the image"
+    fi
     echo "fisherman exit: $rc"; tail -n 25 "$log"
     # Safety net (the namespace normally takes fisherman's mounts with it): unmount anything from this loop
     # device only, deepest first.

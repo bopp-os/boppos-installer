@@ -94,6 +94,24 @@ What it lacks, which BoppOS adds on the fork:
    the hardware-presets page, and the handoff marker for `boppos-deck --welcome` / `--oobe` (section 6).
 5. Defaults for BoppOS: btrfs, composefs, systemd-boot; hide Bluefin/Fedora-specific steps.
 
+**Tested 2026-10-28** (`bootloader-probe.sh fisherman`, `boppos` branch of bopp-os/fisherman, loopback disk on the
+host): fisherman installs `cachyos-plasma:znver4` end to end in about 9 minutes (OCI export ~3.5 min, bootc ~6 min)
+with btrfs + composefs + systemd-boot + `genericImage`; same ESP layout and boot entry as section 4a. Three fixes
+were needed on the fork, all candidates for upstream:
+1. `skipFlatpaks` recipe field (an empty list installs Firefox and two GNOME apps, copied from the running machine).
+2. `skopeo copy --remove-signatures` for the composefs OCI export (fails when the store holds cosign signatures).
+3. Hash plaintext passwords before `chpasswd -e` on composefs (the deploy root has `pam.d` but no PAM modules).
+
+What fisherman does beyond the recipe, for BoppOS to decide on:
+- Copies the running system's Wi-Fi connections and Bluetooth pairings into the target (right on the live ISO,
+  where they come from the installer session; the probe hides them on the host).
+- Appends `rhgb quiet` to every boot entry for Plymouth (`rhgb` is a Fedora-only argument; BoppOS already has
+  `splash`).
+- Enables `cups-browsed`, `avahi-daemon`, `ipp-usb`; writes friendly audio device names (WirePlumber rules);
+  pre-generates wallpaper thumbnails and caches; runs `restorecon` (no-op without SELinux).
+- Looks up the new EFI boot entry with `efibootmgr` for the frontend's BootNext; warns if it is missing. The ISO
+  should ship `efibootmgr`.
+
 Risks: a large, fast-moving upstream (about 1.7 MB of Python plus Go, QML and C++ front ends); Fedora/Universal Blue
 assumptions to find and switch off (SELinux fields, GRUB paths, Bluefin images); packaged as a Flatpak upstream,
 while our ISO needs a native build. Mitigation: keep BoppOS changes as small, separate commits on a branch that
