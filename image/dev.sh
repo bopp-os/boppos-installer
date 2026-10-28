@@ -2,7 +2,7 @@
 # dev.sh — try the installer on this machine without pushing or releasing anything. Needs rootless podman and a
 # Wayland desktop. Run it from the main checkout (it looks for ../bootc-installer, ../fisherman and ../pkgbuilds).
 #
-#   image/dev.sh run [--nocheck]       build both packages from the LOCAL checkouts (working trees, uncommitted edits
+#   image/dev.sh run [--nocheck|--nobuild]   (--nobuild reuses .dev/pkgs) build both packages from the LOCAL checkouts (working trees, uncommitted edits
 #                                      included), then start the installer as the ISO does (cage), nested in a window
 #   image/dev.sh packages [--nocheck]  only build them, into .dev/pkgs (for: sudo LOCAL_PKGS=$PWD/.dev/pkgs image/build.sh)
 #   image/dev.sh shell                 a shell in the dev container with the local packages installed
@@ -25,9 +25,11 @@ pkgbuilds_src="${PKGBUILDS_SRC:-$siblings/pkgbuilds}"
 cmd="${1:-run}"
 [ $# -gt 0 ] && shift
 makepkg_flags="-s"
+nobuild=0
 for a in "$@"; do
     case "$a" in
         --nocheck) makepkg_flags="$makepkg_flags --nocheck" ;;
+        --nobuild) nobuild=1 ;;   # run: reuse the packages already in .dev/pkgs
         *) echo "unknown option: $a"; exit 2 ;;
     esac
 done
@@ -74,6 +76,7 @@ _commit=local
 _fishcommit=local
 source=(bootc-installer-local.tar.gz fisherman-local.tar.gz)
 sha256sums=(SKIP SKIP)
+options=('!debug')
 EOF
 
     # shellcheck disable=SC2016  # expanded inside the container
@@ -96,13 +99,14 @@ in_container() {  # in_container <podman flags> -- <command...>
     [ -S "$sock" ] || { echo "no Wayland socket at $sock"; exit 2; }
     compgen -G "$pkgs/*.pkg.tar.zst" >/dev/null || { echo "no packages in $pkgs; run: $0 packages"; exit 2; }
     mkdir -p "$dev/home" "$repo/probe-logs"
+    # The desktop's socket gets its own name: cage creates a socket of its own, and takes wayland-0 first.
     # shellcheck disable=SC2016  # expanded inside the container
     podman run --rm --security-opt label=disable "${flags[@]}" \
         -v "$pkgs:/pkgs:ro" \
         -v "$here/airootfs/etc/bootc-installer:/etc/bootc-installer:ro" \
         -v "$dev/home:/root" \
-        -v "$sock:/tmp/xdg/wayland-0" \
-        -e XDG_RUNTIME_DIR=/tmp/xdg -e WAYLAND_DISPLAY=wayland-0 \
+        -v "$sock:/tmp/xdg/host-0" \
+        -e XDG_RUNTIME_DIR=/tmp/xdg -e WAYLAND_DISPLAY=host-0 \
         -e WLR_RENDERER=pixman -e GSK_RENDERER=cairo \
         "$img" bash -c '
             pacman -U --noconfirm --needed /pkgs/*.pkg.tar.zst >/tmp/pacman.log 2>&1
@@ -117,7 +121,7 @@ case "$cmd" in
     setup) setup ;;
     packages) build_packages ;;
     run)
-        build_packages
+        [ "$nobuild" = 1 ] || build_packages
         echo "starting the installer (cage, nested in a window); log: probe-logs/dev-run.log"
         in_container -- cage -s -- bootc-installer 2>&1 | tee "$repo/probe-logs/dev-run.log"
         ;;
@@ -125,5 +129,5 @@ case "$cmd" in
         ensure_image
         in_container -it -- bash
         ;;
-    *) echo "usage: $0 {run|packages|shell|setup} [--nocheck]"; exit 2 ;;
+    *) echo "usage: $0 {run|packages|shell|setup} [--nocheck|--nobuild]"; exit 2 ;;
 esac
