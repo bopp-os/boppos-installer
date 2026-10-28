@@ -8,7 +8,8 @@
 #
 # boot: boots a disk the other modes made (default /var/tmp/boppos-probe/disk-keephome.img) in QEMU from the
 #       virt-manager flatpak's QEMU extension (FLATPAK_APP to change it), read-only via snapshot=on, for
-#       BOOT_TIMEOUT seconds (default 240), and looks for a login prompt on the serial console.
+#       BOOT_TIMEOUT seconds (default 240), and looks for a login prompt on the serial console. BOOT_MEM (MiB,
+#       default 4096) and BOOT_DRIVE_IF (ide or virtio, default ide) pick the VM memory and disk type.
 #       Log: /tmp/boppos-probe-boot.log.
 # verify: mounts the disk read-only, reads every composefs object and lists the ones that fail (fs-verity or I/O),
 #         resolves VERIFY_INODES (default: the ones from the first boot log) and shows the first bad file's extents.
@@ -35,6 +36,8 @@ set -euo pipefail
 
 MODE="${1:-all}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-240}"  # seconds QEMU may run before the probe looks for a login prompt
+BOOT_MEM="${BOOT_MEM:-4096}"
+BOOT_DRIVE_IF="${BOOT_DRIVE_IF:-ide}"
 
 # boot mode needs neither root nor podman, so it runs before the rest of the setup.
 if [ "$MODE" = boot ]; then
@@ -43,10 +46,11 @@ if [ "$MODE" = boot ]; then
     log=/tmp/boppos-probe-boot.log
     [ "$(id -u)" = 0 ] && echo "warning: run boot mode as your user; flatpak apps are meant to run unprivileged"
     [ -r "$disk" ] || { echo "cannot read $disk"; exit 2; }
-    echo "booting $disk with $app (${BOOT_TIMEOUT}s, log $log)"
+    echo "booting $disk with $app (${BOOT_TIMEOUT}s, ${BOOT_MEM} MiB, disk if=$BOOT_DRIVE_IF, log $log)"
     # Find QEMU and its UEFI firmware inside the sandbox (virt-manager's QEMU extension is at /app/lib/extensions).
     # shellcheck disable=SC2016  # expanded inside the sandbox
-    flatpak run --device=all --filesystem="$(dirname "$disk")":ro --env=BOOT_TIMEOUT="$BOOT_TIMEOUT" --command=sh "$app" -c '
+    flatpak run --device=all --filesystem="$(dirname "$disk")":ro --env=BOOT_TIMEOUT="$BOOT_TIMEOUT" \
+        --env=BOOT_MEM="$BOOT_MEM" --env=BOOT_DRIVE_IF="$BOOT_DRIVE_IF" --command=sh "$app" -c '
         q=$(command -v qemu-system-x86_64 || ls /app/lib/extensions/bin/qemu-system-x86_64 \
             /app/extensions/*/bin/qemu-system-x86_64 2>/dev/null | head -n1)
         fw=$(find "${q%/bin/*}" /app/share /usr/share \( -name "edk2-x86_64-code.fd*" -o -name "OVMF_CODE*.fd" \) \
@@ -55,12 +59,14 @@ if [ "$MODE" = boot ]; then
         echo "qemu=${q:-MISSING} firmware=${fw:-MISSING}"
         [ -n "$q" ] && [ -n "$fw" ] || { find "${q%/bin/*}" -iname "*edk2*" -o -iname "*ovmf*" 2>/dev/null | head -20; exit 3; }
         [ -r "$1" ] || { echo "disk not visible inside the sandbox: $1"; exit 3; }
-        timeout "$BOOT_TIMEOUT" "$q" -m 4096 -enable-kvm -cpu host -nographic \
-            -drive if=pflash,format=raw,readonly=on,file="$fw" -drive file="$1",format=raw,snapshot=on </dev/null
+        timeout "$BOOT_TIMEOUT" "$q" -m "$BOOT_MEM" -enable-kvm -cpu host -nographic \
+            -drive if=pflash,format=raw,readonly=on,file="$fw" \
+            -drive file="$1",format=raw,snapshot=on,if="$BOOT_DRIVE_IF" </dev/null
         exit 0' sh "$disk" >"$log" 2>&1 || true
     head -n3 "$log"
     if grep -q "login:" "$log"; then echo "boot: reached login"
     else echo "boot: NO login prompt"; tail -n 30 "$log"; fi
+    echo "fs-verity errors in the boot log: $(grep -c "FILE CORRUPTED" "$log" || true)"
     exit 0
 fi
 

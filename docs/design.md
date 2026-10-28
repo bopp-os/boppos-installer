@@ -188,7 +188,10 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   reusing the object store) or only in the VM. `bootloader-probe.sh verify` checks the disk on the host.
   Result: on the host all 233,538 composefs objects (including inodes 88485 and 68745) read back with valid
   fs-verity, so the data on disk is intact; the zeros come from the guest's read path (scattered/mmap reads vs. the
-  host's sequential read). Next check: cold single-block reads at the guest's offsets on the host.
+  host's sequential read). Cold single-block reads at the guest's failing offsets on the host return the guest's
+  expected hashes, and the file is not compressed (heavily fragmented, though). So the host kernel reads the data
+  correctly; the zeros arise between the image file and the guest kernel (QEMU's IDE emulation, guest memory
+  pressure at 4 GiB, or a guest-side kernel path). Next: boot with `BOOT_DRIVE_IF=virtio` and `BOOT_MEM=8192`.
 - Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
   would be left with no boot entry).
 
