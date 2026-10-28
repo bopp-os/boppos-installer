@@ -196,8 +196,13 @@ Probe results on the host (2026-10-27, `cachyos-plasma:znver4`, bootc 1.16.10, l
   objects through mmap page faults (fault-around/readahead), while the host checks used `read()`. A kernel bug in
   btrfs fs-verity on that path, possibly with this file's fragmented 1-block extents, would explain it. A cold mmap
   read on the host also returns the correct data, so the host cannot reproduce it by any read path tried; it only
-  happens inside the running guest. Next: `btrfs check --readonly` on the image (free-space records that wrongly
-  mark these blocks free would let the guest reuse them) and identifying the two files.
+  happens inside the running guest. `btrfs check --readonly` on the image finds no errors. The files: inode 88485
+  is a 96 MB PIE executable (the errors follow "Started Cloudflare Zero Trust Client Daemon", so likely
+  `warp-svc`; unconfirmed), inode 68745 is a zstd-compressed file (likely a kernel module or firmware).
+  **Status: parked as a VM-only finding.** The installed data is intact and boot reaches login. Before shipping,
+  re-test on real hardware (check `journalctl -k | grep 'FILE CORRUPTED'` after first boot); if it shows there,
+  reproduce inside the guest by reading those objects from `/sysroot/composefs/objects` and report to btrfs/fs-verity
+  upstream. `--allow-missing-verity` would hide it, not fix it.
 - Not yet tested: a reinstall with a *different* image digest (no collision, but the old `state/deploy/<oldid>`
   would be left with no boot entry).
 
