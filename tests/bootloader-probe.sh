@@ -93,6 +93,24 @@ if [ "$MODE" = verify ]; then
         echo "--- extent map of $first"; filefrag -v "$vmnt/$first" | head -n 25
     fi
     echo "--- image file holes: $(du -h "$disk" | cut -f1) used of $(du -h --apparent-size "$disk" | cut -f1)"
+    # Repeat the guest's failing reads as single 4 KiB reads at those offsets with a cold page cache: the full
+    # sequential read above passes, so this tests the random-access path. VERIFY_BLOCKS is inode:offset,...
+    blocks="${VERIFY_BLOCKS:-88485:4427776,88485:5017600,88485:6103040,88485:7151616,68745:1110016}"
+    sync; echo 3 >/proc/sys/vm/drop_caches
+    echo "--- cold single-block reads (zero block sha512 starts 2d23913d3759ef01)"
+    blk=$(mktemp)
+    for b in ${blocks//,/ }; do
+        ino="${b%%:*}"; off="${b##*:}"
+        obj=$(btrfs inspect-internal inode-resolve "$ino" "$vmnt" 2>/dev/null | head -n1)
+        if dd if="$obj" of="$blk" bs=4096 skip=$((off / 4096)) count=1 status=none 2>/dev/null; then
+            echo "inode $ino @ $off: read OK, sha512 $(sha512sum <"$blk" | cut -c1-16)"
+        else
+            echo "inode $ino @ $off: read FAILED"
+        fi
+    done
+    rm -f "$blk"
+    echo "--- extents of inode ${blocks%%:*} (flag 'encoded' = compressed)"
+    filefrag -v "$(btrfs inspect-internal inode-resolve "${blocks%%:*}" "$vmnt" | head -n1)" | head -n 12
     exit 0
 fi
 # Default image: the one this host is booted from (e.g. ghcr.io/bopp-os/cachyos-plasma:znver4).
