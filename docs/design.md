@@ -365,7 +365,9 @@ Three repos under `bopp-os`:
 - `bopp-os/fisherman`: fork of tuna-os/fisherman (the installer's submodule points here). Keep-home reinstall,
   ESP vendor backup/restore, in-place `cryptsetup reencrypt`, `/etc` account merge.
 - `bopp-os/boppos-installer` (this repo): the ISO and everything around the installer.
-- `bopp-os/pkgbuilds`: `packages/boppos-bootc-installer` packages both forks (see section 3).
+- `bopp-os/pkgbuilds`: `packages/boppos-bootc-installer` packages both forks (see section 3). Published
+  2026-10-28 (bopp-os/pkgbuilds#41): `boppos-bootc-installer 3.0.0-1` (any) and `boppos-fisherman 3.0.0-1` (x86_64)
+  in the signed `[bopp-os]` repo at `repo.ripps.me`.
 
 ```
 boppos-installer/
