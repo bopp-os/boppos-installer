@@ -1,0 +1,138 @@
+{
+  "aliases": {},
+  "fallback_flatpaks": [],
+  "images": [
+    {
+      "name": "BoppOS Plasma",
+      "registry": "ghcr.io/bopp-os/cachyos-plasma",
+      "subtitle": "KDE Plasma desktop",
+      "search_extra": "boppos cachyos plasma kde plasma desktop",
+      "composefs": true,
+      "bootloader": "systemd",
+      "filesystem": "btrfs",
+      "filesystems": [
+        "btrfs",
+        "ext4"
+      ],
+      "flatpak_var_path": "state/os/default/var",
+      "skip_flatpaks": true,
+      "default_hostname": "boppos",
+      "children": [
+        {
+          "name": "Zen 4",
+          "tag": "znver4",
+          "desc": "AMD Ryzen 7000 and newer, tuned for Zen 4"
+        },
+        {
+          "name": "x86-64-v4",
+          "tag": "v4",
+          "desc": "CPUs with AVX-512"
+        },
+        {
+          "name": "x86-64-v3",
+          "tag": "v3",
+          "desc": "Most CPUs from 2015 on (AVX2)"
+        }
+      ]
+    },
+    {
+      "name": "BoppOS GNOME",
+      "registry": "ghcr.io/bopp-os/cachyos-gnome",
+      "subtitle": "GNOME desktop",
+      "search_extra": "boppos cachyos gnome gnome desktop",
+      "composefs": true,
+      "bootloader": "systemd",
+      "filesystem": "btrfs",
+      "filesystems": [
+        "btrfs",
+        "ext4"
+      ],
+      "flatpak_var_path": "state/os/default/var",
+      "skip_flatpaks": true,
+      "default_hostname": "boppos",
+      "children": [
+        {
+          "name": "Zen 4",
+          "tag": "znver4",
+          "desc": "AMD Ryzen 7000 and newer, tuned for Zen 4"
+        },
+        {
+          "name": "x86-64-v4",
+          "tag": "v4",
+          "desc": "CPUs with AVX-512"
+        },
+        {
+          "name": "x86-64-v3",
+          "tag": "v3",
+          "desc": "Most CPUs from 2015 on (AVX2)"
+        }
+      ]
+    },
+    {
+      "name": "BoppOS Niri",
+      "registry": "ghcr.io/bopp-os/cachyos-niri",
+      "subtitle": "Niri scrolling tiling compositor",
+      "search_extra": "boppos cachyos niri niri scrolling tiling compositor",
+      "composefs": true,
+      "bootloader": "systemd",
+      "filesystem": "btrfs",
+      "filesystems": [
+        "btrfs",
+        "ext4"
+      ],
+      "flatpak_var_path": "state/os/default/var",
+      "skip_flatpaks": true,
+      "default_hostname": "boppos",
+      "children": [
+        {
+          "name": "Zen 4",
+          "tag": "znver4",
+          "desc": "AMD Ryzen 7000 and newer, tuned for Zen 4"
+        },
+        {
+          "name": "x86-64-v4",
+          "tag": "v4",
+          "desc": "CPUs with AVX-512"
+        },
+        {
+          "name": "x86-64-v3",
+          "tag": "v3",
+          "desc": "Most CPUs from 2015 on (AVX2)"
+        }
+      ]
+    },
+    {
+      "name": "BoppOS Cinnamon",
+      "registry": "ghcr.io/bopp-os/cachyos-cinnamon",
+      "subtitle": "Cinnamon desktop",
+      "search_extra": "boppos cachyos cinnamon cinnamon desktop",
+      "composefs": true,
+      "bootloader": "systemd",
+      "filesystem": "btrfs",
+      "filesystems": [
+        "btrfs",
+        "ext4"
+      ],
+      "flatpak_var_path": "state/os/default/var",
+      "skip_flatpaks": true,
+      "default_hostname": "boppos",
+      "children": [
+        {
+          "name": "Zen 4",
+          "tag": "znver4",
+          "desc": "AMD Ryzen 7000 and newer, tuned for Zen 4"
+        },
+        {
+          "name": "x86-64-v4",
+          "tag": "v4",
+          "desc": "CPUs with AVX-512"
+        },
+        {
+          "name": "x86-64-v3",
+          "tag": "v3",
+          "desc": "Most CPUs from 2015 on (AVX2)"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "log_file": "/tmp/bootc-installer.log",
+  "distro_logo": "",
+  "imgref": "ghcr.io/bopp-os/cachyos-plasma:v3",
+  "skipFlatpaks": true,
+  "steps": {
+    "welcome": {
+      "template": "welcome",
+      "protected": true
+    },
+    "image": {
+      "template": "image"
+    },
+    "disk": {
+      "template": "disk"
+    },
+    "encryption": {
+      "template": "encryption"
+    },
+    "user": {
+      "template": "user"
+    }
+  }
+}

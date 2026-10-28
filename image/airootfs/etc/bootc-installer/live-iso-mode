@@ -1,0 +1,1 @@
+# Tells fisherman this is live media (archiso sets none of the kernel or /run signals it checks).

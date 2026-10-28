@@ -154,6 +154,20 @@ same-named package elsewhere from replacing them (pacman takes a package from th
 `provides`/`conflicts` cover the upstream names, and the binaries keep theirs. The ISO lists them in
 `packages.x86_64`, no Flatpak runtime, and `cage` launches the installer full-screen.
 
+The profile is `image/` (archiso v91, derived from its baseline/releng profiles), built with
+`sudo image/build.sh` (mkarchiso in a privileged Arch container; log in `probe-logs/iso-build.log`):
+- UEFI only (`uefi.systemd-boot`), squashfs (xz), Arch `core`/`extra` plus `[bopp-os]` (key `keys/boppos.asc`,
+  fingerprint checked by the build).
+- tty1 autologins `liveuser` (sysusers, passwordless sudo), whose login runs `cage -s -- bootc-installer`; tty2
+  has a root shell. `/etc/bootc-installer/live-iso-mode` tells fisherman it is live media, so the installer uses
+  `sudo` (no polkit agent in cage).
+- `/etc/bootc-installer/images.json` lists the four flavors (plasma, gnome, niri, cinnamon) with `znver4`/`v4`/`v3`
+  tags to pick by hand until CPU detection exists; each sets composefs, systemd-boot, btrfs and `skip_flatpaks`.
+- Memory floor (4c): `copytoram=n`, zram up to 4 GB only on machines with ≤ 8 GB, `/tmp` capped at 25%.
+- Second boot entry with `console=ttyS0` for VM tests.
+- Needed in the packages first: UI pass-through of `skipFlatpaks`/`kernelArgs`, and fisherman excluding
+  archiso's boot medium (`/run/archiso/bootmnt`) from install targets.
+
 Alternative: build the installer environment as a bootc/OCI image from the same CachyOS base and convert it with a
 disk-image tool. More parts, same result; revisit if we want the installer itself updatable. Not for v1.
 

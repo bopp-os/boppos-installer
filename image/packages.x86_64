@@ -1,0 +1,23 @@
+# Live system
+base
+linux
+linux-firmware
+amd-ucode
+intel-ucode
+mkinitcpio
+mkinitcpio-archiso
+sudo
+zram-generator
+# Network (the installer's network page uses NetworkManager through libnm)
+networkmanager
+wpa_supplicant
+# Kiosk session: cage runs the installer full-screen
+cage
+mesa
+adwaita-fonts
+noto-fonts
+# Installer (bopp-os repo); fisherman pulls podman, skopeo and the disk tools
+boppos-bootc-installer
+boppos-fisherman
+efibootmgr
+lvm2
