@@ -276,7 +276,7 @@ probe_fisherman() {
     template="$(cd "$(dirname "$0")/.." && pwd)/recipes/boppos-test.json"
     echo "=== fisherman ($src, branch $(git -C "$src" branch --show-current 2>/dev/null || echo '?'))"
     [ -f "$src/fisherman/go.mod" ] || { echo "no fisherman checkout at $src (set FISHERMAN_SRC)"; return; }
-    for m in skopeo sfdisk partprobe mkfs.btrfs mkfs.fat blkid udevadm; do
+    for m in skopeo sfdisk partprobe mkfs.btrfs mkfs.fat blkid udevadm openssl unshare; do
         command -v "$m" >/dev/null || { echo "missing host tool fisherman needs: $m"; return; }
     done
     mkdir -p "$WORK/go" "$WORK/fisherman-home"
@@ -285,6 +285,7 @@ probe_fisherman() {
         -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e GOCACHE=/go/cache "$GO_IMAGE" sh -c '
             unformatted=$(gofmt -l cmd internal); [ -z "$unformatted" ] || echo "gofmt wants changes in: $unformatted"
             go test ./internal/recipe/ && go test -run TestSkopeoExportOCI ./internal/install/ \
+                && go test -run TestCreateUser ./internal/post/ \
                 && go build -o /go/bin/fisherman-boppos ./cmd/fisherman'; then
         echo "build FAILED"; return
     fi
