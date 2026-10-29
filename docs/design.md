@@ -405,21 +405,24 @@ How it works (fisherman `InstallGrubExternal`, `internal/install/grub_external.g
    `/boot/ostree/...` paths in the boot entries also resolve from the partition root.
 3. `grub-install` twice from the live system: `--removable` (EFI/BOOT/BOOTX64.EFI, boots on firmware with no entry)
    and `--bootloader-id` (a firmware entry; failure only warns, VMs often refuse NVRAM writes).
-4. A first `/boot/grub/grub.cfg` built from `/boot/loader/entries/*.conf`, newest first (grub from Arch cannot read
-   boot entries itself: no `blscfg`).
-5. `sysroot.bootloader` set to `grub2` in the ostree repo config, so ostree regenerates `grub.cfg` on every upgrade.
+4. A `/boot/grub/grub.cfg` that runs `blscfg` (the `blsuki` module of Arch's grub 2.16), so grub reads
+   `/boot/loader/entries/*.conf` every time it starts, as Fedora's grub does. Below the deployments: a submenu with
+   the entries that existed at install (a fallback if `blscfg` fails) and, on UEFI, "UEFI Firmware Settings".
+5. `sysroot.bootloader` stays `none`: ostree only writes the entries and flips `loader`; nothing regenerates `grub.cfg`.
 
-What the image needs: the `grub` package. The image's ostree (`2026.4-1.1`, chaotic-aur build) already ships
-`/etc/grub.d/15_ostree` and `/usr/lib/libostree/grub2-15_ostree`, which use `grub-mkconfig` (there is no
-`ostree-grub-generator`). The image had no grub until `grub` was added to `files/base/base.yaml`. The ISO carries grub
-for `grub-install` (`image/packages.x86_64`).
+An earlier version rendered one static `menuentry` and set `sysroot.bootloader=grub2`, expecting ostree to run
+`grub-mkconfig` through `15_ostree` after each upgrade. A `bootc switch` then added no entry (VM test, 2026-10-29).
+
+What the image needs: nothing for the menu. The menu title of an entry is the image's `PRETTY_NAME` in
+`/usr/lib/os-release` (set per flavor, "BoppOS Linux (GNOME)"). `grub` in the image is only useful for its tools. The
+ISO carries grub for `grub-install` (`image/packages.x86_64`).
 
 Verified (VM, 4 GB, 60 GiB, UEFI): install from the ISO and boot to the login screen (niri); `/boot` has `grub/`, `efi/`,
-`loader -> loader.1`, `ostree/`; `bootloader=grub2` in the repo config; loopback probe `tests/bootloader-probe.sh
-ostree-grub` boots to login with no fs-verity errors.
+`loader -> loader.1`, `ostree/`; loopback probe `tests/bootloader-probe.sh ostree-grub` boots to login with no
+fs-verity errors; encrypted install (LUKS) boots after the passphrase; `bootc switch` gnome -> cinnamon replaces the
+top menu entry (ostree:0) and keeps the previous one as ostree:1.
 
-Not verified: `bootc upgrade` / `bootc switch` adding a second grub entry and keeping the old one (needs an image with
-grub); real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
+Not verified: booting the switched entry and `bootc rollback`; real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
 updating the bootloader binary itself (without `bootupd` it is manual `grub-install`).
 
 ## 4e. What testing in a VM found (2026-10-28 to 29)
