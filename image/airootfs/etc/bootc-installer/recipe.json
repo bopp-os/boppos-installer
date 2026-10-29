@@ -29,5 +29,6 @@
     "user": {
       "template": "user"
     }
-  }
+  },
+  "firstRunMarker": true
 }
