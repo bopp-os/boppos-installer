@@ -23,4 +23,6 @@ plymouth
 boppos-bootc-installer
 boppos-fisherman
 efibootmgr
+# grub-install for ostree installs (fisherman's grub-external bootloader); the image brings its own grub-mkconfig
+grub
 lvm2
