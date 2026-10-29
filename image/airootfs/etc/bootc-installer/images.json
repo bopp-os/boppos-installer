@@ -138,5 +138,16 @@
       "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
       "needs_user_creation": true
     }
-  ]
+  ],
+  "custom_defaults": {
+    "needs_user_creation": true,
+    "composefs": false,
+    "bootloader": "grub-external",
+    "filesystem": "btrfs",
+    "filesystems": [
+      "btrfs",
+      "ext4"
+    ],
+    "default_hostname": "boppos"
+  }
 }
