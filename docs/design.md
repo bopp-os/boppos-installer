@@ -483,7 +483,7 @@ The installer writes the user's choices to the deployed system, then reboots:
 3. **Marker (done, 2026-10-29).** `/var/lib/<distro id>/first-run` (so `/var/lib/boppos/first-run`) holds `mode=welcome`
    when the wizard created an account and `mode=oobe` when it did not (`post.WriteFirstRun`, recipe field `firstRun`,
    switched on by `firstRunMarker` in the ISO's `recipe.json`). The marker presence means "first run is pending".
-4. **Merged first-run app (in progress in boppos-tools).** One entry point decides its mode from the live system and
+4. **Merged first-run app (in progress in boppos-tools; contract in its `docs/first-run.md`, branch `claude/first-run-unified`).** One entry point decides its mode from the live system and
    treats the marker's mode as a hint: no marker, nothing; marker and no real account (uid 1000 to 59999 with a login
    shell), setup mode; marker and an account, the welcome tour. It removes the marker at the end. The "start in Gaming
    Mode or Desktop" choice lives in that app, not in the installer. The image triggers it once with
