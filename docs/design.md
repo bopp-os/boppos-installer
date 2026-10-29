@@ -1,8 +1,11 @@
 # BoppOS net-installer: design and options
 
-Status: **proposal, nothing built.** Written 2026-10-27. Recommendation: fork tuna-os/bootc-installer (option E,
-confirmed by the maintainer 2026-10-27). Bootloader path verified on a loopback disk (section 4a). Open decisions:
-section 7.
+Status (2026-10-29): **built and working in a VM.** The ISO boots to a GUI wizard (language, keyboard, timezone, flavor,
+disk, encryption, user) and installs a BoppOS image with the **ostree backend and grub installed by fisherman**
+(section 4d), at the 4 GB RAM floor and a 60 GiB disk. The first boot of the installed system reaches the login
+screen. Not yet verified: image upgrades regenerating the grub menu, real hardware, Secure Boot. Everything is in local
+commits on `ostree-backend` branches (`boppos-installer`, `fisherman`) and `boppos` (`bootc-installer`); nothing is
+pushed. Written 2026-10-27, last revised 2026-10-29. Open decisions: section 7.
 
 Goal: a bootable installer image in the style of SteamOS Recovery (not a live-USB demo). The user boots it and picks
 target drive, user account, desktop flavor (or "deckify" Gaming Mode), Wi-Fi/Ethernet, and basic hardware optimizations.
@@ -13,7 +16,7 @@ It then downloads the BoppOS bootc image and installs it. It hands off to the `b
 | Fact | Source | Consequence |
 |---|---|---|
 | BoppOS is Arch/CachyOS, built from `Containerfile.base` + flavor Containerfiles. | `~/Projects/boppos/cachyos` | Anything RPM-native (Anaconda) runs on a different OS than the payload. |
-| The image installs `bootc`, `ostree`, `dracut`, `btrfs-progs`, `e2fsprogs`, `dosfstools`. It installs **no** GRUB, `bootupd`, `shim`, `efibootmgr`. | `files/base/base.yaml` (grep for grub/bootupd: no hits) | The ostree backend can't install a bootloader. **Answered in section 4a:** `--composefs-backend --bootloader systemd` installs and boots to login. |
+| The image installs `bootc`, `ostree`, `dracut`, `btrfs-progs`, `e2fsprogs`, `dosfstools`. It installs **no** GRUB (added on 2026-10-29, see 4d), `bootupd`, `shim`, `efibootmgr`. | `files/base/base.yaml` (grep for grub/bootupd: no hits) | The ostree backend can't install a bootloader. **Answered in section 4a:** `--composefs-backend --bootloader systemd` installs and boots to login. |
 | Default root FS is btrfs (`00-rootfs.toml`). `/boot` is not forced to ext4. | `files/base/usr/lib/bootc/install/` | Installer must keep btrfs as the default and not assume ext4 `/boot`. |
 | Image-wide kargs live in `90-boppos-optimizations.toml`; DMI-matched presets live in boppos-tools `kargs.d/*.conf` and `boppos.hwprofiles`. | image repo, boppos-tools | Hardware step reuses these, never copies them. |
 | bootc `install to-disk` / `to-filesystem` options (v1.16.13): `--bootloader grub\|grub-cc\|systemd\|none`, `--filesystem`, `--karg`, `--block-setup direct\|tpm2-luks`, `--source-imgref`, `--target-imgref`, `--composefs-backend`, `--bound-images`. | [bootc man page](https://www.mankier.com/8/bootc-install-to-disk) | Flags we need (kargs, TPM2 LUKS, bootloader choice) exist. `to-disk` is whole-disk only; RAID/LVM/LUKS/partition reuse go through `to-filesystem`. |
@@ -188,7 +191,8 @@ in the installer; point `--target-imgref` at the signed registry ref.
 
 ## 4. The bootloader question
 
-**Answered in section 4a**: composefs backend + systemd-boot. The text below is the original analysis.
+**Answered in section 4d** (2026-10-29): ostree backend, bootloader `--bootloader none`, grub installed by fisherman.
+Section 4a (composefs + systemd-boot) stays as the tested fallback. The text below is the original analysis.
 
 Before the probe, `bootc install` on this image **could not be assumed to work end to end**:
 - The image has no GRUB, `bootupd` or `shim` package (checked in `base.yaml`). bootc's default (`grub`) goes through
@@ -212,6 +216,9 @@ so the installer does not need to change when the image decision lands. If the c
 can run `bootctl install` itself against the mounted target ESP as a fallback (works, but then updates are unmanaged).
 
 ### 4a. systemd-boot means bootc's composefs backend (2026-10-27)
+
+Status 2026-10-29: this path installs and boots (tested with the Plasma image by the probe and the Cinnamon image by the installer, both in a VM), but it is no longer the
+default: see 4d. Kept as the fallback, selectable per image (`composefs: true`, `bootloader: systemd` in `images.json`).
 
 - First probe run: `--bootloader systemd` fails with `bootupd is required for ostree-based installs` (`install.rs`
   ~2104). On the ostree backend only bootupd installs bootloaders. bootc's `bootc-bootloaders.7.md`: systemd-boot is
@@ -300,6 +307,60 @@ Installer steps for a composefs reinstall that keeps home, from these results:
 4. Merge the saved `/etc` files into the new `state/deploy/<newid>/etc`, then delete the old deployment dirs.
 5. Write `timeout 3` into `loader/loader.conf` so the rollback entry is visible.
 
+## 4d. ostree + grub without bootupd (2026-10-29)
+
+Decision: the default install is the **ostree backend with grub installed by fisherman** (`bootloader: grub-external`
+in the recipe). The maintainer prefers ostree for `ostree admin`, `bopp-kargs`, the three-way `/etc` merge and the
+previous deployment as a boot-menu fallback, and runs a Bazzite-migrated host that boots grub + ostree without
+`bootupd`. `bootupd` only installs and updates the bootloader; ostree itself writes the boot entries.
+
+Why not systemd-boot on ostree (reasoning, not tested): systemd-boot reads only FAT partitions (ESP or XBOOTLDR).
+bootc's ostree layout keeps `/boot` on ext4, and ostree keeps a `loader -> loader.N` symlink there, which FAT cannot hold.
+That is why bootc offers systemd-boot only through the composefs backend (4a).
+
+How it works (fisherman `InstallGrubExternal`, `internal/install/grub_external.go`):
+1. Partition as for the grub layout: 2 GiB EFI (vfat), 2 GiB `/boot` (ext4), the rest btrfs (subvolume `@`).
+2. `bootc install to-filesystem --bootloader none --generic-image` on the ostree backend. bootc writes
+   `sysroot.bootloader=none` and `bootprefix=true` into `ostree/repo/config`; `/boot` gets `boot -> .`, so the
+   `/boot/ostree/...` paths in the boot entries also resolve from the partition root.
+3. `grub-install` twice from the live system: `--removable` (EFI/BOOT/BOOTX64.EFI, boots on firmware with no entry)
+   and `--bootloader-id` (a firmware entry; failure only warns, VMs often refuse NVRAM writes).
+4. A first `/boot/grub/grub.cfg` built from `/boot/loader/entries/*.conf`, newest first (grub from Arch cannot read
+   boot entries itself: no `blscfg`).
+5. `sysroot.bootloader` set to `grub2` in the ostree repo config, so ostree regenerates `grub.cfg` on every upgrade.
+
+What the image needs: the `grub` package. The image's ostree (`2026.4-1.1`, chaotic-aur build) already ships
+`/etc/grub.d/15_ostree` and `/usr/lib/libostree/grub2-15_ostree`, which use `grub-mkconfig` (there is no
+`ostree-grub-generator`). The image had no grub until `grub` was added to `files/base/base.yaml`. The ISO carries grub
+for `grub-install` (`image/packages.x86_64`).
+
+Verified (VM, 4 GB, 60 GiB, UEFI): install from the ISO and boot to the login screen (niri); `/boot` has `grub/`, `efi/`,
+`loader -> loader.1`, `ostree/`; `bootloader=grub2` in the repo config; loopback probe `tests/bootloader-probe.sh
+ostree-grub` boots to login with no fs-verity errors.
+
+Not verified: `bootc upgrade` / `bootc switch` adding a second grub entry and keeping the old one (needs an image with
+grub); real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
+updating the bootloader binary itself (without `bootupd` it is manual `grub-install`).
+
+## 4e. What testing in a VM found (2026-10-28 to 29)
+
+| Symptom | Cause | Fix and where |
+|---|---|---|
+| Flavor, disk and filesystem pages skipped | upstream drops the image step on live media (it assumes the image is on the ISO); the filesystem picker lives on the disk page, which is skipped with one disk; flavor leaves using the `tag` shorthand were not counted | `bootc-installer`: keep the image step unless `local_imgref`; show the disk page when the image offers more than one filesystem; count `tag` leaves |
+| No user page | `needs_user_creation` missing from `images.json`; custom images used hard-coded defaults | `images.json` sets it; `custom_defaults` section for typed-in images |
+| Download restarts at about 50%, then "no space" | podman unpacked layers into the live system's `/var/tmp` (RAM); the composefs pull used podman's default store on the ISO's overlayfs | `fisherman`: pull to the target disk and bind-mount `/var/tmp` there, also for composefs |
+| `podman` falls back to `vfs`, disk fills (52 of 58 GiB) | podman caches "overlay unsupported" in its shared runroot; an earlier call against the live overlay poisoned fisherman's later overlay probe | `fisherman`: own `--runroot` for the probe and for the composefs install; refuse `vfs` for a composefs pull with the reason |
+| Install fails at the end: "Failed to convert SOURCE_DATE_EPOCH" | the image ends with `ENV SOURCE_DATE_EPOCH=""`; ostree and `mkfs.fat` reject the empty value | `fisherman`: `--unsetenv=SOURCE_DATE_EPOCH` for the bootc container. Image should use `ARG SOURCE_DATE_EPOCH=0` |
+| Login screen never appears (Cinnamon, Plasma) | locked service accounts (for example `greeter`) have "last password change" = day 0, which PAM treats as expired | image: empty that field for locked accounts after the package step. ISO helper `fixshadow` for tests |
+| "User is not in the sudoers file" | the image has no `%wheel` rule | image: `files/base/etc/sudoers.d/10-wheel`, mode 0440 |
+| Black screen with niri or Plasma in a VM | no 3D acceleration; Mesa has no render device | VM: Virtio video with 3D on (screenshots then come out blank) |
+| No way in when the login screen fails | the image starts no getty on any console | image task; `systemd.debug_shell=1` gives a root shell on tty9 meanwhile |
+| Boot stops at "Terminate Plymouth Boot Screen" | plymouth with the boppos theme never quits in the VM; `plymouth.enable=0` boots | open (theme in boppos-tools, units in the image) |
+| Two `bopp-tray` icons | a global user service and an autostart entry both start it | open (boppos-tools, image) |
+
+The debugging aids in the ISO: `diag` (install log tail, storage driver, mount options, space, memory), `mon` (disk and
+memory every minute), `fixshadow`.
+
 ## 4b. Reinstalling over an old bootc system and keeping home
 
 Read from bootc source, `main` @ `d3b33bc` (2026-10-27, after v1.17.2). Line numbers are in
@@ -375,6 +436,11 @@ usable** for margin. A live ISO runs from RAM and the BoppOS image is ~8 GB comp
 6. **Target system, not just the installer:** the first boot of the installed system should also be checked at
    4 GB (the probe's `boot` mode already uses `BOOT_MEM=4096` by default; that boot reached login).
 
+Measured 2026-10-29 (ostree install of a BoppOS image, flavor not recorded; VM with 4096 MiB RAM and a 60 GiB disk, btrfs mounted with
+`compress=zstd:1` during the install, overlay storage on the target disk): the target disk grew to a peak of **34 GB
+used of 56 GB**. Memory used stayed at about 1.1 to 1.2 GB, peaking at 1.75 GB near the end, with at least 2.1 GB
+available the whole time. The 4 GB floor and the installer's 50 GiB disk minimum hold with room to spare.
+
 ## 5. Repo layout
 
 Three repos under `bopp-os`:
@@ -399,38 +465,57 @@ boppos-installer/
   .github/workflows/          build ISO + QEMU smoke test with an --autoinstall recipe (later)
 ```
 
-Only `docs/` and `tests/bootloader-probe.sh` exist now. Nothing from this work goes into boppos-tools; the installer
-only reads its `hwprofiles` data.
+Today the repo has `docs/`, `tests/bootloader-probe.sh` (modes: bootloaders, keep-home, fisherman, ostree-grub, boot,
+verify), `image/` (the archiso profile, `build.sh`, and `dev.sh` to try the installer in a window without a VM or any
+disk access), and `recipes/boppos-test.json`. Nothing from this work goes into boppos-tools; the installer only reads
+its `hwprofiles` data and icons.
 
 ## 6. Handoff to the first-run wizard
 
 The installer writes the user's choices to the deployed system, then reboots:
-1. `answers.json` copied to `<deploy>/var/lib/boppos/install-answers.json` (flavor, hw-opts chosen, locale, Wi-Fi profile
-   if wanted). `/var` is the stateroot's persistent part, so it survives updates.
-2. **User account.** Installer asks for it; fisherman's `internal/post/user.go` already creates it for the composefs
-   layout (`useradd` into the deployment's `/etc`, first-boot tmpfiles create `/var/home/<user>`). Hashed password only.
-   On a keep-home reinstall the account comes from the merged old `/etc` instead (section 4a).
-3. Marker `/var/lib/boppos/first-run` with `mode=welcome` if a user was created, or `mode=oobe` (no user, e.g. bare
-   `bootc install to-disk`, which creates none). A unit/autostart with
-   `ConditionPathExists=/var/lib/boppos/first-run` starts `boppos-deck --welcome` or `--oobe`, then removes the marker.
-4. Installer's "basic hardware optimizations" step only chooses presets; it passes the resulting kargs through
-   `bootc install --karg`, and records the chosen preset names so the wizard shows them as already on. Source of truth stays in boppos-tools
-   (`hwprofiles`, `kargs.d/*.conf`); the installer image ships `boppos-tools` and imports it.
-5. The wizard stays dry-run per the boppos-tools decision until a deckify image exists. "Deckify" is a disabled
-   entry in `flavors.json` until then.
+1. **User account (done).** The wizard asks for it; fisherman's `internal/post/user.go` runs `useradd` in the
+   deployment (chroot on ostree, `--root` on composefs) with the full name as comment, the groups `wheel`, `docker`,
+   `incus-admin`, `libvirt`, `dialout` (only those that exist in the image), and a hashed password. The image must ship
+   the `wheel` group and a `%wheel` sudoers rule.
+2. **System settings (done).** Language, console keymap and timezone from the wizard go to `/etc/locale.conf`,
+   `/etc/vconsole.conf` and the `/etc/localtime` link of the deployment (`post.WriteLocale`, validated); the hostname goes
+   to `/etc/hostname`.
+3. **Marker (done, 2026-10-29).** `/var/lib/<distro id>/first-run` (so `/var/lib/boppos/first-run`) holds `mode=welcome`
+   when the wizard created an account and `mode=oobe` when it did not (`post.WriteFirstRun`, recipe field `firstRun`,
+   switched on by `firstRunMarker` in the ISO's `recipe.json`). The marker presence means "first run is pending".
+4. **Merged first-run app (in progress in boppos-tools).** One entry point decides its mode from the live system and
+   treats the marker's mode as a hint: no marker, nothing; marker and no real account (uid 1000 to 59999 with a login
+   shell), setup mode; marker and an account, the welcome tour. It removes the marker at the end. The "start in Gaming
+   Mode or Desktop" choice lives in that app, not in the installer. The image triggers it once with
+   `ConditionPathExists=/var/lib/boppos/first-run`.
+5. **Hardware presets (not built).** The installer's step only chooses presets; it passes the resulting kargs through
+   `bootc install --karg` (recipe field `kernelArgs` exists) and records the chosen preset names in
+   `/var/lib/boppos/install-answers.json` so the wizard shows them as already on. Source of truth stays in boppos-tools
+   (`hwprofiles`, `kargs.d/*.conf`, `docs/first-run-presets.md`). The image's own `kargs.d` file is trimmed to the LUKS
+   option until the presets exist (branch `boppos-trim-kargs` in the image repo).
+6. The wizard stays dry-run per the boppos-tools decision until a deckify image exists. "Deckify" is a disabled entry in
+   `flavors.json` until then.
 
 ## 7. Open decisions for the maintainer
 
-Decided 2026-10-27: fork tuna-os/bootc-installer (E); composefs + systemd-boot (4a); dark mode default with a light
-toggle; keep-home reinstall; optional in-place LUKS2 of the kept root (btrfs/ext4); image tag picked from the CPU.
+Decided 2026-10-27: fork tuna-os/bootc-installer (E); dark mode default with a light toggle; keep-home reinstall;
+optional in-place LUKS2 of the kept root (btrfs/ext4); image tag picked from the CPU.
+Decided 2026-10-29: the default install is ostree + grub installed by fisherman (4d); composefs + systemd-boot stays as a
+fallback (4a); first-run modes are merged into one app that reads the live state (section 6).
 
 Still open:
-1. Create `bopp-os/boppos-installer` on GitHub (local repo exists, no remote yet). The forks
-   `bopp-os/bootc-installer` and `bopp-os/fisherman` exist since 2026-10-27 (upstream default branch `dev`;
-   Issues and Actions off until enabled). Next on the fork: a `boppos` branch whose `.gitmodules` points at
-   `bopp-os/fisherman`.
-2. Image repo fixes: `ARG SOURCE_DATE_EPOCH=0` instead of the trailing `ENV SOURCE_DATE_EPOCH=""`; os-release name so
-   the boot entry says BoppOS instead of "Arch Linux"; a `loader.conf` timeout.
-3. Installer environment: archiso (recommended) vs bootc-image based.
-4. v1 scope: whole-disk erase plus keep-home reinstall, or also "install into an existing partition"?
-5. Re-test the fs-verity errors (section 4a) on real hardware before release.
+1. Create `bopp-os/boppos-installer` on GitHub (local repo has no remote yet). Before any push, squash the local commits
+   of each repo into a few meaningful ones, release the package version bump through a pull request in `bopp-os/pkgbuilds`,
+   and rebuild the ISO from the published packages.
+2. Image repo (all on branch `boppos-trim-kargs` or still to do): `grub`, the `%wheel` rule and the trimmed kargs exist as
+   local commits; still to do are the locked-account password dates, `ARG SOURCE_DATE_EPOCH=0`, the os-release name
+   (the grub entry says "Arch Linux (ostree:0)"), a grub timeout through `/etc/default/grub`, a text login on some console,
+   the plymouth hang, and Samba failing on first boot.
+3. Upgrades on ostree + grub: prove that `bootc upgrade` or `bootc switch` regenerates `grub.cfg` with the old entry kept,
+   with an image that has `grub`. Also decide how the bootloader binary itself gets updated without `bootupd`.
+4. Not built yet: CPU-level tag detection, the hardware-presets page, keep-home on ostree, in-place LUKS2.
+5. Installer environment: archiso (used) vs bootc-image based.
+6. v1 scope: whole-disk erase plus keep-home reinstall, or also "install into an existing partition"?
+7. Re-test the fs-verity errors (section 4a) on real hardware before release, and test the ostree path on real hardware
+   and with Secure Boot (no shim in the image).
+8. Minimum disk size: measured peak is 34 GB; the fisherman limit is 50 GiB. Lower it later if more installs agree.
