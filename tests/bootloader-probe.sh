@@ -295,19 +295,23 @@ probe_ostree_grub() {
     if install_to_disk none "$log"; then echo "install: OK"; else echo "install: FAILED"; tail -n 15 "$log"; return; fi
     sfdisk -l "$LOOPDEV" || true
     lsblk -o NAME,LABEL,FSTYPE,PARTTYPENAME "$LOOPDEV" || true
+    # bootc's layout has no separate /boot partition when the root is btrfs: /boot is a folder on the root filesystem.
     esp=$(part_by_guid "$ESP_GUID"); boot=$(part_by_label boot); root=$(part_by_label root)
+    [ -n "$boot" ] || boot=$root
     echo "esp=$esp boot=$boot root=$root"
-    [ -n "$esp" ] && [ -n "$boot" ] && [ -n "$root" ] || { echo "ostree-grub: a partition is missing"; return; }
+    [ -n "$esp" ] && [ -n "$root" ] || { echo "ostree-grub: a partition is missing"; return; }
     mkdir -p "$WORK/mnt"
-    mount "$root" "$WORK/mnt" && mkdir -p "$WORK/mnt/boot" && mount "$boot" "$WORK/mnt/boot" &&
-        mkdir -p "$WORK/mnt/boot/efi" && mount "$esp" "$WORK/mnt/boot/efi" || { echo "ostree-grub: mount failed"; return; }
+    mount "$root" "$WORK/mnt" || { echo "ostree-grub: mount of the root failed"; return; }
+    if [ "$boot" != "$root" ]; then mount "$boot" "$WORK/mnt/boot" || { echo "ostree-grub: mount of /boot failed"; return; }; fi
+    mkdir -p "$WORK/mnt/boot/efi"
+    mount "$esp" "$WORK/mnt/boot/efi" || { echo "ostree-grub: mount of the ESP failed"; return; }
     entry=$(find "$WORK/mnt/boot/loader/entries" -name '*.conf' 2>/dev/null | sort -V | tail -n 1)
     [ -n "$entry" ] || { echo "ostree-grub: no boot entry under /boot/loader/entries"; find "$WORK/mnt/boot" -maxdepth 3 | head -20; return; }
     echo "--- ostree boot entry $entry:"; cat "$entry"
     uuid=$(blkid -s UUID -o value "$boot")
     mkdir -p "$WORK/mnt/boot/grub"
     {
-        echo "set default=0"; echo "set timeout=5"; echo "insmod part_gpt"; echo "insmod ext2"
+        echo "set default=0"; echo "set timeout=5"; echo "insmod part_gpt"; echo "insmod ext2"; echo "insmod btrfs"
         echo "menuentry '$(sed -n 's/^title //p' "$entry")' {"
         echo "    search --no-floppy --fs-uuid --set=root $uuid"
         echo "    linux $(sed -n 's/^linux //p' "$entry") $(sed -n 's/^options //p' "$entry")"
