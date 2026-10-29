@@ -2,7 +2,7 @@
 # Probes for `bootc install` on the BoppOS image. Needs root and podman (run on the host or in CI, not in the
 # Litterbox). Writes only to sparse loopback files in the work dir.
 #
-#   sudo tests/bootloader-probe.sh {bootloaders|keep-home|fisherman|all} [image] [workdir]
+#   sudo tests/bootloader-probe.sh {bootloaders|keep-home|fisherman|ostree-grub|all} [image] [workdir]
 #   tests/bootloader-probe.sh boot [disk-image]     (as your user, no sudo)
 #   sudo tests/bootloader-probe.sh verify [disk-image]
 #
@@ -15,6 +15,8 @@
 # verify: mounts the disk read-only, reads every composefs object and lists the ones that fail (fs-verity or I/O),
 #         runs btrfs check --readonly, identifies VERIFY_INODES (default: the ones from the first boot log), and
 #         repeats the failing blocks with read() and mmap. VERIFY_SCAN=0 skips the full read.
+# ostree-grub: installs [image] with the ostree backend and --bootloader none, runs grub-install once from an Arch container, and
+#         writes the first grub.cfg from ostree's boot entry; then boots it. Answers: can ostree + grub work without bootupd?
 # fisherman: builds the forked installer backend (FISHERMAN_SRC, default ../fisherman next to this repo) in a Go
 #         container (GO_IMAGE), installs [image] to disk-fisherman.img with recipes/boppos-test.json, and prints the
 #         partition table, ESP and boot entries. Run it from the main checkout so the default source path resolves.
@@ -182,7 +184,7 @@ ROOT_GUID=4f68bce3-e8cd-4db1-96e7-fbcaf984b709   # DPS root x86-64
 LOOPDEV=""
 read -ra EXTRA_ARGS <<<"${PROBE_EXTRA_ARGS:-}"
 
-case "$MODE" in bootloaders|keep-home|fisherman|all) ;; *) echo "usage: $0 {bootloaders|keep-home|fisherman|all} [image] [workdir] | $0 {boot|verify} [disk-image]"; exit 2;; esac
+case "$MODE" in bootloaders|keep-home|fisherman|ostree-grub|all) ;; *) echo "usage: $0 {bootloaders|keep-home|fisherman|ostree-grub|all} [image] [workdir] | $0 {boot|verify} [disk-image]"; exit 2;; esac
 mkdir -p "$WORK"
 echo "mode=$MODE image=$IMAGE work=$WORK"
 podman pull "$IMAGE"
@@ -276,6 +278,51 @@ probe_bootloaders() {
         cleanup
         boot_in_qemu "$img" "$LOGS/boot-$bl.log"
     done
+}
+
+# ostree + grub without bootupd: install with --bootloader none (ostree backend), then run grub-install ourselves once
+# (from an Arch container, so the image needs no grub package) and write the first grub.cfg from ostree's boot entry.
+# From then on ostree keeps its own entries current; this checks the first boot only.
+part_by_label() {  # part_by_label <label>: partition device of that filesystem label on $LOOPDEV
+    udevadm settle 2>/dev/null || true
+    lsblk -nrpo NAME,LABEL "$LOOPDEV" | awk -v l="$1" '$2==l{print $1; exit}'
+}
+
+probe_ostree_grub() {
+    local img="$WORK/disk-ostree-grub.img" log="$LOGS/install-ostree-grub.log" esp boot root entry uuid
+    echo "=== ostree + grub (--bootloader none, then grub-install)"
+    new_disk "$img"
+    if install_to_disk none "$log"; then echo "install: OK"; else echo "install: FAILED"; tail -n 15 "$log"; return; fi
+    sfdisk -l "$LOOPDEV" || true
+    lsblk -o NAME,LABEL,FSTYPE,PARTTYPENAME "$LOOPDEV" || true
+    esp=$(part_by_guid "$ESP_GUID"); boot=$(part_by_label boot); root=$(part_by_label root)
+    echo "esp=$esp boot=$boot root=$root"
+    [ -n "$esp" ] && [ -n "$boot" ] && [ -n "$root" ] || { echo "ostree-grub: a partition is missing"; return; }
+    mkdir -p "$WORK/mnt"
+    mount "$root" "$WORK/mnt" && mkdir -p "$WORK/mnt/boot" && mount "$boot" "$WORK/mnt/boot" &&
+        mkdir -p "$WORK/mnt/boot/efi" && mount "$esp" "$WORK/mnt/boot/efi" || { echo "ostree-grub: mount failed"; return; }
+    entry=$(find "$WORK/mnt/boot/loader/entries" -name '*.conf' 2>/dev/null | sort -V | tail -n 1)
+    [ -n "$entry" ] || { echo "ostree-grub: no boot entry under /boot/loader/entries"; find "$WORK/mnt/boot" -maxdepth 3 | head -20; return; }
+    echo "--- ostree boot entry $entry:"; cat "$entry"
+    uuid=$(blkid -s UUID -o value "$boot")
+    mkdir -p "$WORK/mnt/boot/grub"
+    {
+        echo "set default=0"; echo "set timeout=5"; echo "insmod part_gpt"; echo "insmod ext2"
+        echo "menuentry '$(sed -n 's/^title //p' "$entry")' {"
+        echo "    search --no-floppy --fs-uuid --set=root $uuid"
+        echo "    linux $(sed -n 's/^linux //p' "$entry") $(sed -n 's/^options //p' "$entry")"
+        echo "    initrd $(sed -n 's/^initrd //p' "$entry")"
+        echo "}"
+    } >"$WORK/mnt/boot/grub/grub.cfg"
+    echo "--- grub.cfg:"; cat "$WORK/mnt/boot/grub/grub.cfg"
+    # --removable puts the loader at EFI/BOOT/BOOTX64.EFI, so the VM's firmware finds it without NVRAM entries.
+    podman run --rm --privileged --network host -v /dev:/dev -v "$WORK/mnt:/target" docker.io/library/archlinux:latest sh -c '
+        pacman -Sy --noconfirm grub >/dev/null 2>&1 &&
+        grub-install --target=x86_64-efi --efi-directory=/target/boot/efi --boot-directory=/target/boot --removable --no-nvram' \
+        >"$LOGS/grub-install.log" 2>&1 && echo "grub-install: OK" || { echo "grub-install: FAILED"; tail -n 10 "$LOGS/grub-install.log"; }
+    find "$WORK/mnt/boot/efi" -maxdepth 3 | head -12
+    cleanup
+    boot_in_qemu "$img" "$LOGS/boot-ostree-grub.log"
 }
 
 # Build fisherman (the forked installer backend) from FISHERMAN_SRC in a Go container, then install the image to a
@@ -445,6 +492,7 @@ case "$MODE" in
     bootloaders) probe_bootloaders ;;
     keep-home) probe_keep_home ;;
     fisherman) probe_fisherman ;;
+    ostree-grub) probe_ostree_grub ;;
     all) probe_bootloaders; probe_keep_home ;;
 esac
 echo "Done. Logs in $LOGS, disk images in $WORK"
