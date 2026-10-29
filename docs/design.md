@@ -307,60 +307,6 @@ Installer steps for a composefs reinstall that keeps home, from these results:
 4. Merge the saved `/etc` files into the new `state/deploy/<newid>/etc`, then delete the old deployment dirs.
 5. Write `timeout 3` into `loader/loader.conf` so the rollback entry is visible.
 
-## 4d. ostree + grub without bootupd (2026-10-29)
-
-Decision: the default install is the **ostree backend with grub installed by fisherman** (`bootloader: grub-external`
-in the recipe). The maintainer prefers ostree for `ostree admin`, `bopp-kargs`, the three-way `/etc` merge and the
-previous deployment as a boot-menu fallback, and runs a Bazzite-migrated host that boots grub + ostree without
-`bootupd`. `bootupd` only installs and updates the bootloader; ostree itself writes the boot entries.
-
-Why not systemd-boot on ostree (reasoning, not tested): systemd-boot reads only FAT partitions (ESP or XBOOTLDR).
-bootc's ostree layout keeps `/boot` on ext4, and ostree keeps a `loader -> loader.N` symlink there, which FAT cannot hold.
-That is why bootc offers systemd-boot only through the composefs backend (4a).
-
-How it works (fisherman `InstallGrubExternal`, `internal/install/grub_external.go`):
-1. Partition as for the grub layout: 2 GiB EFI (vfat), 2 GiB `/boot` (ext4), the rest btrfs (subvolume `@`).
-2. `bootc install to-filesystem --bootloader none --generic-image` on the ostree backend. bootc writes
-   `sysroot.bootloader=none` and `bootprefix=true` into `ostree/repo/config`; `/boot` gets `boot -> .`, so the
-   `/boot/ostree/...` paths in the boot entries also resolve from the partition root.
-3. `grub-install` twice from the live system: `--removable` (EFI/BOOT/BOOTX64.EFI, boots on firmware with no entry)
-   and `--bootloader-id` (a firmware entry; failure only warns, VMs often refuse NVRAM writes).
-4. A first `/boot/grub/grub.cfg` built from `/boot/loader/entries/*.conf`, newest first (grub from Arch cannot read
-   boot entries itself: no `blscfg`).
-5. `sysroot.bootloader` set to `grub2` in the ostree repo config, so ostree regenerates `grub.cfg` on every upgrade.
-
-What the image needs: the `grub` package. The image's ostree (`2026.4-1.1`, chaotic-aur build) already ships
-`/etc/grub.d/15_ostree` and `/usr/lib/libostree/grub2-15_ostree`, which use `grub-mkconfig` (there is no
-`ostree-grub-generator`). The image had no grub until `grub` was added to `files/base/base.yaml`. The ISO carries grub
-for `grub-install` (`image/packages.x86_64`).
-
-Verified (VM, 4 GB, 60 GiB, UEFI): install from the ISO and boot to the login screen (niri); `/boot` has `grub/`, `efi/`,
-`loader -> loader.1`, `ostree/`; `bootloader=grub2` in the repo config; loopback probe `tests/bootloader-probe.sh
-ostree-grub` boots to login with no fs-verity errors.
-
-Not verified: `bootc upgrade` / `bootc switch` adding a second grub entry and keeping the old one (needs an image with
-grub); real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
-updating the bootloader binary itself (without `bootupd` it is manual `grub-install`).
-
-## 4e. What testing in a VM found (2026-10-28 to 29)
-
-| Symptom | Cause | Fix and where |
-|---|---|---|
-| Flavor, disk and filesystem pages skipped | upstream drops the image step on live media (it assumes the image is on the ISO); the filesystem picker lives on the disk page, which is skipped with one disk; flavor leaves using the `tag` shorthand were not counted | `bootc-installer`: keep the image step unless `local_imgref`; show the disk page when the image offers more than one filesystem; count `tag` leaves |
-| No user page | `needs_user_creation` missing from `images.json`; custom images used hard-coded defaults | `images.json` sets it; `custom_defaults` section for typed-in images |
-| Download restarts at about 50%, then "no space" | podman unpacked layers into the live system's `/var/tmp` (RAM); the composefs pull used podman's default store on the ISO's overlayfs | `fisherman`: pull to the target disk and bind-mount `/var/tmp` there, also for composefs |
-| `podman` falls back to `vfs`, disk fills (52 of 58 GiB) | podman caches "overlay unsupported" in its shared runroot; an earlier call against the live overlay poisoned fisherman's later overlay probe | `fisherman`: own `--runroot` for the probe and for the composefs install; refuse `vfs` for a composefs pull with the reason |
-| Install fails at the end: "Failed to convert SOURCE_DATE_EPOCH" | the image ends with `ENV SOURCE_DATE_EPOCH=""`; ostree and `mkfs.fat` reject the empty value | `fisherman`: `--unsetenv=SOURCE_DATE_EPOCH` for the bootc container. Image should use `ARG SOURCE_DATE_EPOCH=0` |
-| Login screen never appears (Cinnamon, Plasma) | locked service accounts (for example `greeter`) have "last password change" = day 0, which PAM treats as expired | image: empty that field for locked accounts after the package step. ISO helper `fixshadow` for tests |
-| "User is not in the sudoers file" | the image has no `%wheel` rule | image: `files/base/etc/sudoers.d/10-wheel`, mode 0440 |
-| Black screen with niri or Plasma in a VM | no 3D acceleration; Mesa has no render device | VM: Virtio video with 3D on (screenshots then come out blank) |
-| No way in when the login screen fails | the image starts no getty on any console | image task; `systemd.debug_shell=1` gives a root shell on tty9 meanwhile |
-| Boot stops at "Terminate Plymouth Boot Screen" | plymouth with the boppos theme never quits in the VM; `plymouth.enable=0` boots | open (theme in boppos-tools, units in the image) |
-| Two `bopp-tray` icons | a global user service and an autostart entry both start it | open (boppos-tools, image) |
-
-The debugging aids in the ISO: `diag` (install log tail, storage driver, mount options, space, memory), `mon` (disk and
-memory every minute), `fixshadow`.
-
 ## 4b. Reinstalling over an old bootc system and keeping home
 
 Read from bootc source, `main` @ `d3b33bc` (2026-10-27, after v1.17.2). Line numbers are in
@@ -440,6 +386,60 @@ Measured 2026-10-29 (ostree install of a BoppOS image, flavor not recorded; VM w
 `compress=zstd:1` during the install, overlay storage on the target disk): the target disk grew to a peak of **34 GB
 used of 56 GB**. Memory used stayed at about 1.1 to 1.2 GB, peaking at 1.75 GB near the end, with at least 2.1 GB
 available the whole time. The 4 GB floor and the installer's 50 GiB disk minimum hold with room to spare.
+
+## 4d. ostree + grub without bootupd (2026-10-29)
+
+Decision: the default install is the **ostree backend with grub installed by fisherman** (`bootloader: grub-external`
+in the recipe). The maintainer prefers ostree for `ostree admin`, `bopp-kargs`, the three-way `/etc` merge and the
+previous deployment as a boot-menu fallback, and runs a Bazzite-migrated host that boots grub + ostree without
+`bootupd`. `bootupd` only installs and updates the bootloader; ostree itself writes the boot entries.
+
+Why not systemd-boot on ostree (reasoning, not tested): systemd-boot reads only FAT partitions (ESP or XBOOTLDR).
+bootc's ostree layout keeps `/boot` on ext4, and ostree keeps a `loader -> loader.N` symlink there, which FAT cannot hold.
+That is why bootc offers systemd-boot only through the composefs backend (4a).
+
+How it works (fisherman `InstallGrubExternal`, `internal/install/grub_external.go`):
+1. Partition as for the grub layout: 2 GiB EFI (vfat), 2 GiB `/boot` (ext4), the rest btrfs (subvolume `@`).
+2. `bootc install to-filesystem --bootloader none --generic-image` on the ostree backend. bootc writes
+   `sysroot.bootloader=none` and `bootprefix=true` into `ostree/repo/config`; `/boot` gets `boot -> .`, so the
+   `/boot/ostree/...` paths in the boot entries also resolve from the partition root.
+3. `grub-install` twice from the live system: `--removable` (EFI/BOOT/BOOTX64.EFI, boots on firmware with no entry)
+   and `--bootloader-id` (a firmware entry; failure only warns, VMs often refuse NVRAM writes).
+4. A first `/boot/grub/grub.cfg` built from `/boot/loader/entries/*.conf`, newest first (grub from Arch cannot read
+   boot entries itself: no `blscfg`).
+5. `sysroot.bootloader` set to `grub2` in the ostree repo config, so ostree regenerates `grub.cfg` on every upgrade.
+
+What the image needs: the `grub` package. The image's ostree (`2026.4-1.1`, chaotic-aur build) already ships
+`/etc/grub.d/15_ostree` and `/usr/lib/libostree/grub2-15_ostree`, which use `grub-mkconfig` (there is no
+`ostree-grub-generator`). The image had no grub until `grub` was added to `files/base/base.yaml`. The ISO carries grub
+for `grub-install` (`image/packages.x86_64`).
+
+Verified (VM, 4 GB, 60 GiB, UEFI): install from the ISO and boot to the login screen (niri); `/boot` has `grub/`, `efi/`,
+`loader -> loader.1`, `ostree/`; `bootloader=grub2` in the repo config; loopback probe `tests/bootloader-probe.sh
+ostree-grub` boots to login with no fs-verity errors.
+
+Not verified: `bootc upgrade` / `bootc switch` adding a second grub entry and keeping the old one (needs an image with
+grub); real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
+updating the bootloader binary itself (without `bootupd` it is manual `grub-install`).
+
+## 4e. What testing in a VM found (2026-10-28 to 29)
+
+| Symptom | Cause | Fix and where |
+|---|---|---|
+| Flavor, disk and filesystem pages skipped | upstream drops the image step on live media (it assumes the image is on the ISO); the filesystem picker lives on the disk page, which is skipped with one disk; flavor leaves using the `tag` shorthand were not counted | `bootc-installer`: keep the image step unless `local_imgref`; show the disk page when the image offers more than one filesystem; count `tag` leaves |
+| No user page | `needs_user_creation` missing from `images.json`; custom images used hard-coded defaults | `images.json` sets it; `custom_defaults` section for typed-in images |
+| Download restarts at about 50%, then "no space" | podman unpacked layers into the live system's `/var/tmp` (RAM); the composefs pull used podman's default store on the ISO's overlayfs | `fisherman`: pull to the target disk and bind-mount `/var/tmp` there, also for composefs |
+| `podman` falls back to `vfs`, disk fills (52 of 58 GiB) | podman caches "overlay unsupported" in its shared runroot; an earlier call against the live overlay poisoned fisherman's later overlay probe | `fisherman`: own `--runroot` for the probe and for the composefs install; refuse `vfs` for a composefs pull with the reason |
+| Install fails at the end: "Failed to convert SOURCE_DATE_EPOCH" | the image ends with `ENV SOURCE_DATE_EPOCH=""`; ostree and `mkfs.fat` reject the empty value | `fisherman`: `--unsetenv=SOURCE_DATE_EPOCH` for the bootc container. Image should use `ARG SOURCE_DATE_EPOCH=0` |
+| Login screen never appears (Cinnamon, Plasma) | locked service accounts (for example `greeter`) have "last password change" = day 0, which PAM treats as expired | image: empty that field for locked accounts after the package step. ISO helper `fixshadow` for tests |
+| "User is not in the sudoers file" | the image has no `%wheel` rule | image: `files/base/etc/sudoers.d/10-wheel`, mode 0440 |
+| Black screen with niri or Plasma in a VM | no 3D acceleration; Mesa has no render device | VM: Virtio video with 3D on (screenshots then come out blank) |
+| No way in when the login screen fails | the image starts no getty on any console | image task; `systemd.debug_shell=1` gives a root shell on tty9 meanwhile |
+| Boot stops at "Terminate Plymouth Boot Screen" | plymouth with the boppos theme never quits in the VM; `plymouth.enable=0` boots | open (theme in boppos-tools, units in the image) |
+| Two `bopp-tray` icons | a global user service and an autostart entry both start it | open (boppos-tools, image) |
+
+The debugging aids in the ISO: `diag` (install log tail, storage driver, mount options, space, memory), `mon` (disk and
+memory every minute), `fixshadow`.
 
 ## 5. Repo layout
 
