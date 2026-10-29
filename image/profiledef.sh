@@ -18,4 +18,5 @@ file_permissions=(
   ["/etc/sudoers.d/10-liveuser"]="0:0:440"
   ["/usr/local/bin/diag"]="0:0:755"
   ["/usr/local/bin/mon"]="0:0:755"
+  ["/usr/local/bin/fixshadow"]="0:0:755"
 )

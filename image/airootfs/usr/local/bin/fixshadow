@@ -1,0 +1,16 @@
+#!/bin/bash
+# fixshadow [disk]: repair locked service accounts whose password-change date is day 0 (PAM treats them as expired, so
+# the login manager's account cannot start) on an installed ostree system. Run it from the live ISO's tty2.
+disk=${1:-/dev/vda}
+root=$(lsblk -nrpo NAME,LABEL "$disk" | awk '$2=="root"{print $1; exit}')
+[ -n "$root" ] || { echo "no partition labelled root on $disk"; exit 1; }
+mnt=$(mktemp -d)
+mount "$root" "$mnt" || exit 1
+today=$(( $(date +%s) / 86400 ))
+for f in "$mnt"/@/ostree/deploy/*/deploy/*.0/etc/shadow "$mnt"/ostree/deploy/*/deploy/*.0/etc/shadow; do
+    [ -f "$f" ] || continue
+    echo "fixing: $(awk -F: '$3==0 && $2 ~ /^[!*]/ {printf "%s ", $1}' "$f")"
+    awk -F: -v OFS=: -v d="$today" '$3==0 && $2 ~ /^[!*]/ {$3=d} {print}' "$f" >"$mnt/shadow.new" && cat "$mnt/shadow.new" >"$f"
+    rm -f "$mnt/shadow.new"
+done
+umount "$mnt" && rmdir "$mnt"
