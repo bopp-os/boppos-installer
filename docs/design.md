@@ -420,9 +420,10 @@ ISO carries grub for `grub-install` (`image/packages.x86_64`).
 Verified (VM, 4 GB, 60 GiB, UEFI): install from the ISO and boot to the login screen (niri); `/boot` has `grub/`, `efi/`,
 `loader -> loader.1`, `ostree/`; loopback probe `tests/bootloader-probe.sh ostree-grub` boots to login with no
 fs-verity errors; encrypted install (LUKS) boots after the passphrase; `bootc switch` gnome -> cinnamon replaces the
-top menu entry (ostree:0) and keeps the previous one as ostree:1.
+top menu entry (ostree:0) and keeps the previous one as ostree:1; the cinnamon entry boots and `bootc rollback`
+returns to gnome. Two deployments (gnome and cinnamon) used 35 GB of the 56 GB root (btrfs, zstd:1).
 
-Not verified: booting the switched entry and `bootc rollback`; real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
+Not verified: real hardware; Secure Boot (no shim: grub is unsigned); keep-home on ostree (4b was written for composefs);
 updating the bootloader binary itself (without `bootupd` it is manual `grub-install`).
 
 ## 4e. What testing in a VM found (2026-10-28 to 29)
