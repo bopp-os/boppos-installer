@@ -3,7 +3,11 @@
 # the Legion Go: try "rotate 90", "rotate 270" or "rotate normal". With no argument it lists the outputs.
 uid=$(id -u liveuser)
 export XDG_RUNTIME_DIR=/run/user/$uid
-sock=$(cd "$XDG_RUNTIME_DIR" 2>/dev/null && ls wayland-* 2>/dev/null | grep -v lock | head -n1)
+sock=
+for s in "$XDG_RUNTIME_DIR"/wayland-*; do
+    case $s in *.lock) continue ;; esac
+    [ -S "$s" ] && { sock=${s##*/}; break; }
+done
 [ -n "$sock" ] || { echo "no Wayland session yet (is the installer on tty1?)"; exit 1; }
 export WAYLAND_DISPLAY=$sock
 if [ -z "$1" ]; then wlr-randr; exit; fi
