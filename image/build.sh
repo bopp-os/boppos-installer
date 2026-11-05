@@ -28,18 +28,9 @@ if [ -n "${LOCAL_PKGS:-}" ]; then
     local_mount=(-v "$LOCAL_PKGS:/localpkgs:ro")
 fi
 
-# The boot splash theme is the BoppOS one from the boppos-tools checkout (read-only; nothing is written there).
-tools_src="${BOPPOS_TOOLS_SRC:-$(dirname "$repo")/boppos-tools}"
-theme_mount=()
-if [ -f "$tools_src/boot/plymouth/boppos/boppos.plymouth" ]; then
-    theme_mount=(-v "$tools_src/boot/plymouth/boppos:/plymouth-theme:ro")
-else
-    echo "note: no BoppOS plymouth theme at $tools_src/boot/plymouth/boppos; the ISO boots with the default splash"
-fi
-
 # shellcheck disable=SC2016  # expanded inside the container
 # Host networking: rootful podman's default container network did not resolve DNS on the build host.
-podman run --rm --privileged --network host -v "$here:/profile:ro" "${local_mount[@]}" "${theme_mount[@]}" -v "$out:/out" \
+podman run --rm --privileged --network host -v "$here:/profile:ro" "${local_mount[@]}" -v "$out:/out" \
     -e WANT="$want" "$image" bash -euo pipefail -c '
     pacman -Syu --noconfirm --needed archiso >/dev/null
     pacman-key --init >/dev/null 2>&1
@@ -49,10 +40,6 @@ podman run --rm --privileged --network host -v "$here:/profile:ro" "${local_moun
     pacman-key --add /profile/keys/boppos.asc >/dev/null
     pacman-key --lsign-key "$WANT" >/dev/null
     cp -a /profile /tmp/profile
-    if [ -d /plymouth-theme ]; then
-        mkdir -p /tmp/profile/airootfs/usr/share/plymouth/themes
-        cp -a /plymouth-theme /tmp/profile/airootfs/usr/share/plymouth/themes/boppos
-    fi
     if [ -d /localpkgs ]; then
         mkdir /tmp/localrepo && cp /localpkgs/*.pkg.tar.zst /tmp/localrepo/
         repo-add -q /tmp/localrepo/boppos-local.db.tar.zst /tmp/localrepo/*.pkg.tar.zst
