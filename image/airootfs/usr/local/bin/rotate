@@ -1,0 +1,12 @@
+#!/bin/bash
+# rotate: turn the installer's screen (type it on tty2: Ctrl+Alt+F2). For a handheld whose panel is portrait, such as
+# the Legion Go: try "rotate 90", "rotate 270" or "rotate normal". With no argument it lists the outputs.
+uid=$(id -u liveuser)
+export XDG_RUNTIME_DIR=/run/user/$uid
+sock=$(cd "$XDG_RUNTIME_DIR" 2>/dev/null && ls wayland-* 2>/dev/null | grep -v lock | head -n1)
+[ -n "$sock" ] || { echo "no Wayland session yet (is the installer on tty1?)"; exit 1; }
+export WAYLAND_DISPLAY=$sock
+if [ -z "$1" ]; then wlr-randr; exit; fi
+case "$1" in normal | 90 | 180 | 270 | flipped | flipped-90 | flipped-180 | flipped-270) ;; *) echo "usage: rotate [normal|90|180|270]"; exit 2 ;; esac
+out=$(wlr-randr | awk '/^[^ ]/ {print $1; exit}')
+wlr-randr --output "$out" --transform "$1" && echo "$out -> $1"

@@ -19,4 +19,5 @@ file_permissions=(
   ["/usr/local/bin/diag"]="0:0:755"
   ["/usr/local/bin/mon"]="0:0:755"
   ["/usr/local/bin/fixshadow"]="0:0:755"
+  ["/usr/local/bin/rotate"]="0:0:755"
 )

@@ -13,6 +13,8 @@ networkmanager
 wpa_supplicant
 # Kiosk session: cage runs the installer full-screen
 cage
+# rotate (tty2) needs it, for portrait handheld panels
+wlr-randr
 mesa
 adwaita-fonts
 noto-fonts
