@@ -8,9 +8,10 @@ if [ "$USER" = liveuser ] && [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY
     export VANILLA_NO_APPLY_XKB=1
     # TEST BUILDS: show the Wi-Fi page even when a connection exists. Remove before a release.
     export BOPPOS_FORCE_NETWORK_PAGE=1
-    # A shorter on-screen keyboard than squeekboard's built-in layout (it is as wide as the screen).
-    mkdir -p "$HOME/.local/share/squeekboard/keyboards"
-    cp /etc/boppos-installer/squeekboard/us.yaml "$HOME/.local/share/squeekboard/keyboards/us.yaml"
+    # A smaller on-screen keyboard: squeekboard sizes its panel from the screen (a third to half of its height) and
+    # scales that by this setting. Only squeekboard reads the keyfile (see sway.conf).
+    mkdir -p "$HOME/.config/glib-2.0/settings"
+    printf '[sm/puri/Squeekboard]\nscale-in-horizontal-screen-orientation=0.7\n' >"$HOME/.config/glib-2.0/settings/keyfile"
     # A private session bus for squeekboard and the installer (the keyboard button talks to squeekboard over it).
     exec systemd-cat -t boppos-installer dbus-run-session -- sway -c /etc/boppos-installer/sway.conf
 fi
