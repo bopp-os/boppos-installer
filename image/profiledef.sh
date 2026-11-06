@@ -20,5 +20,6 @@ file_permissions=(
   ["/usr/local/bin/mon"]="0:0:755"
   ["/usr/local/bin/fixshadow"]="0:0:755"
   ["/usr/local/bin/rotate"]="0:0:755"
+  ["/usr/local/bin/inputs"]="0:0:755"
   ["/usr/local/bin/boppos-orient"]="0:0:755"
 )

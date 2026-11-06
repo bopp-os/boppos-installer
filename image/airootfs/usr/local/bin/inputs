@@ -1,0 +1,16 @@
+#!/bin/bash
+# inputs: list the input devices (type it on tty2: Ctrl+Alt+F2), to see why a touchpad, touch screen or mouse does
+# nothing. First what the kernel found, then what the installer's session (sway) uses and as what.
+echo "== Kernel input devices =="
+grep -E '^N: Name=' /proc/bus/input/devices | sed 's/^N: Name=/  /'
+
+echo
+echo "== Installer session (sway) =="
+uid=$(id -u liveuser)
+sock=
+for s in /run/user/"$uid"/sway-ipc.*.sock; do [ -S "$s" ] && { sock=$s; break; }; done
+if [ -z "$sock" ]; then
+    echo "  no sway session yet (is the installer on tty1?)"
+    exit 0
+fi
+SWAYSOCK=$sock swaymsg -t get_inputs | grep -E '^Input device|^  Type' | paste - - | sed -E 's/^Input device: (.*)\t  Type: (.*)/  \2: \1/'
