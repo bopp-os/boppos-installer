@@ -14,6 +14,7 @@ wpa_supplicant
 # The installer session: sway as a kiosk, squeekboard as the on-screen keyboard (touch-only handhelds)
 sway
 squeekboard
+dbus
 mesa
 adwaita-fonts
 noto-fonts
