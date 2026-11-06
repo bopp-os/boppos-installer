@@ -165,7 +165,7 @@ The profile is `image/` (archiso v91, derived from its baseline/releng profiles)
   output in the journal (`journalctl -t boppos-installer`); tty2 autologins root for debugging;
   `systemd-firstboot` is masked (UTC, us keymap). `/etc/bootc-installer/live-iso-mode` tells fisherman it is live media, so the installer uses
   `sudo` (no polkit agent in cage).
-- `/etc/bootc-installer/images.json` lists the four flavors (plasma, gnome, niri, cinnamon) with `znver4`/`v4`/`v3`
+- `/etc/bootc-installer/images.json` lists the five flavors (plasma, gnome, niri, cinnamon, deck) with `znver4`/`v4`/`v3`
   tags to pick by hand until CPU detection exists; each sets composefs, systemd-boot, btrfs and `skip_flatpaks`.
 - Memory floor (4c): `copytoram=n`, zram up to 4 GB only on machines with ≤ 8 GB, `/tmp` capped at 25%.
 - Second boot entry with `console=ttyS0` for VM tests.

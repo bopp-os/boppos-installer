@@ -137,6 +137,40 @@
       ],
       "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
       "needs_user_creation": true
+    },
+    {
+      "name": "BoppOS Deck",
+      "registry": "ghcr.io/bopp-os/cachyos-deck",
+      "subtitle": "Console-style gaming for handhelds and living rooms",
+      "search_extra": "boppos cachyos deck steam deck handheld gaming console legion go rog ally gamescope",
+      "composefs": false,
+      "bootloader": "grub-external",
+      "filesystem": "btrfs",
+      "filesystems": [
+        "btrfs",
+        "ext4"
+      ],
+      "skip_flatpaks": true,
+      "default_hostname": "boppos",
+      "children": [
+        {
+          "name": "Zen 4",
+          "tag": "znver4",
+          "desc": "AMD Ryzen 7000 and newer, tuned for Zen 4"
+        },
+        {
+          "name": "x86-64-v4",
+          "tag": "v4",
+          "desc": "CPUs with AVX-512"
+        },
+        {
+          "name": "x86-64-v3",
+          "tag": "v3",
+          "desc": "Most CPUs from 2015 on (AVX2)"
+        }
+      ],
+      "icon": "/usr/share/icons/hicolor/512x512/apps/boppos-icon.png",
+      "needs_user_creation": true
     }
   ],
   "custom_defaults": {
