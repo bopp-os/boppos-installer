@@ -114,7 +114,8 @@ in_container() {  # in_container <podman flags> -- <command...>
     # unmask=/sys/firmware: podman hides it by default, and the installer refuses to start without /sys/firmware/efi
     # ("It did not start in UEFI mode"). Read-only sysfs; a normal user cannot write EFI variables.
     # shellcheck disable=SC2016  # expanded inside the container
-    podman run --rm --security-opt label=disable --security-opt unmask=/sys/firmware "${flags[@]}" \
+    # --init: a real PID 1 that passes Ctrl+C on (sway keeps running when its nested window is closed).
+    podman run --rm --init --name boppos-installer-dev --replace --security-opt label=disable --security-opt unmask=/sys/firmware "${flags[@]}" \
         -v "$pkgs:/pkgs:ro" \
         -v "$here/airootfs/etc/bootc-installer:/etc/bootc-installer:ro" \
         -v "$here/airootfs/etc/boppos-installer:/etc/boppos-installer:ro" \
