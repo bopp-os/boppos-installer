@@ -142,6 +142,7 @@ case "$cmd" in
         # The same session as the ISO: sway (nested in a window here) and squeekboard, the on-screen keyboard.
         # shellcheck disable=SC2016  # expanded inside the container
         in_container -- sh -c 'dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null
+            rm -rf "$HOME/.local/share/squeekboard"   # a layout copy from an earlier dev run would override the built-in one
             mkdir -p "$HOME/.config/glib-2.0/settings"
             printf "[sm/puri/Squeekboard]\nscale-in-horizontal-screen-orientation=0.7\n" >"$HOME/.config/glib-2.0/settings/keyfile"
             # sway carries a file capability (cap_sys_nice) that a rootless container cannot grant: a copy has none.
