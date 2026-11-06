@@ -29,3 +29,5 @@ efibootmgr
 # grub-install for ostree installs (fisherman's grub-external bootloader); the image brings its own grub-mkconfig
 grub
 lvm2
+# systemd-cryptenroll loads these to enroll the TPM2 unlock token during install
+tpm2-tss
