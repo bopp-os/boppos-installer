@@ -142,6 +142,8 @@ case "$cmd" in
         # The same session as the ISO: sway (nested in a window here) and squeekboard, the on-screen keyboard.
         # shellcheck disable=SC2016  # expanded inside the container
         in_container -- sh -c 'dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null
+            mkdir -p "$HOME/.local/share/squeekboard/keyboards"
+            cp /etc/boppos-installer/squeekboard/us.yaml "$HOME/.local/share/squeekboard/keyboards/us.yaml"
             # sway carries a file capability (cap_sys_nice) that a rootless container cannot grant: a copy has none.
             cp /usr/bin/sway /tmp/sway-nocap
             exec dbus-run-session -- /tmp/sway-nocap -c /etc/boppos-installer/sway.conf' 2>&1 | tee "$repo/probe-logs/dev-run.log"
