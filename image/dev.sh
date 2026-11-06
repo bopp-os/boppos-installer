@@ -141,7 +141,8 @@ case "$cmd" in
         echo "starting the installer (sway, nested in a window); log: probe-logs/dev-run.log"
         # The same session as the ISO: sway (nested in a window here) and squeekboard, the on-screen keyboard.
         # shellcheck disable=SC2016  # expanded inside the container
-        in_container -- sh -c 'mkdir -p "$HOME/.config/glib-2.0/settings"
+        in_container -- sh -c 'dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null
+            mkdir -p "$HOME/.config/glib-2.0/settings"
             printf "[org/gnome/desktop/a11y/applications]\nscreen-keyboard-enabled=true\n" >"$HOME/.config/glib-2.0/settings/keyfile"
             export GSETTINGS_BACKEND=keyfile
             # sway carries a file capability (cap_sys_nice) that a rootless container cannot grant: a copy has none.
