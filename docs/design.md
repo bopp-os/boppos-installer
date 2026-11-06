@@ -531,8 +531,8 @@ The stick booted (an earlier miss was a loose USB-A to C adapter). Three problem
    hint. `boppos-orient` (started by the sway config) turns the output 90 degrees for DMI product `83E1` / "Legion Go"
    and the Steam Deck (`Jupiter`, `Galileo`), and maps the touchscreen to it. The direction 90 is a guess, not
    verified; `rotate 90|270|normal` on tty2 changes it by hand.
-2. No on-screen keyboard (cage has no text-input protocol). sway + squeekboard; the setting
-   `screen-keyboard-enabled` is forced on because the handheld's controllers count as a hardware keyboard.
+2. No on-screen keyboard (cage has no text-input protocol). sway + squeekboard, which shows when a text field takes
+   focus. (A forced `screen-keyboard-enabled` setting was tried and removed: squeekboard does not read it, phosh does.)
 3. No Wi-Fi page: the installer has one (`defaults/network.py`) but `builder.py` did not register it and `recipe.json`
    had no step for it. Both fixed; the page skips itself when a connection already exists, `conn-check` follows it.
 

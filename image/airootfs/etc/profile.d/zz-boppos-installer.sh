@@ -6,10 +6,5 @@ if [ "$USER" = liveuser ] && [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY
     export WLR_NO_HARDWARE_CURSORS=1
     # The keyboard page must not try to apply the layout through GNOME settings (the kiosk has none).
     export VANILLA_NO_APPLY_XKB=1
-    # squeekboard also shows when a hardware keyboard is present (a handheld's controllers count as one): the
-    # setting lives in a keyfile so that no dconf daemon is needed.
-    mkdir -p "$HOME/.config/glib-2.0/settings"
-    printf '[org/gnome/desktop/a11y/applications]\nscreen-keyboard-enabled=true\n' >"$HOME/.config/glib-2.0/settings/keyfile"
-    export GSETTINGS_BACKEND=keyfile
     exec systemd-cat -t boppos-installer sway -c /etc/boppos-installer/sway.conf
 fi
