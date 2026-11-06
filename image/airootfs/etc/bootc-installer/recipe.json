@@ -17,9 +17,6 @@
     "network": {
       "template": "network"
     },
-    "conn-check": {
-      "template": "conn-check"
-    },
     "timezone": {
       "template": "timezone"
     },
