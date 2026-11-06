@@ -6,8 +6,6 @@ if [ "$USER" = liveuser ] && [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY
     export WLR_NO_HARDWARE_CURSORS=1
     # The keyboard page must not try to apply the layout through GNOME settings (the kiosk has none).
     export VANILLA_NO_APPLY_XKB=1
-    # TEST BUILDS: show the Wi-Fi page even when a connection exists. Remove before a release.
-    export BOPPOS_FORCE_NETWORK_PAGE=1
     # A smaller on-screen keyboard: squeekboard sizes its panel from the screen (a third to half of its height) and
     # scales that by this setting. Only squeekboard reads the keyfile (see sway.conf).
     mkdir -p "$HOME/.config/glib-2.0/settings"
