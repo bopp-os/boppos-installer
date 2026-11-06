@@ -1,10 +1,15 @@
-# On tty1 the live user gets the installer full-screen in cage. Leaving it ends the session and getty starts it
-# again. Output from cage and the installer goes to the journal (journalctl -t boppos-installer); tty2
+# On tty1 the live user gets the installer in a sway kiosk with an on-screen keyboard. Leaving it ends the session and
+# getty starts it again. Output from sway and the installer goes to the journal (journalctl -t boppos-installer); tty2
 # (Ctrl+Alt+F2) has a root shell for debugging.
 if [ "$USER" = liveuser ] && [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     # Software cursor: with a virtual GPU (virtio) the hardware cursor plane shows the pointer upside down.
     export WLR_NO_HARDWARE_CURSORS=1
     # The keyboard page must not try to apply the layout through GNOME settings (the kiosk has none).
     export VANILLA_NO_APPLY_XKB=1
-    exec systemd-cat -t boppos-installer cage -s -- bootc-installer
+    # squeekboard also shows when a hardware keyboard is present (a handheld's controllers count as one): the
+    # setting lives in a keyfile so that no dconf daemon is needed.
+    mkdir -p "$HOME/.config/glib-2.0/settings"
+    printf '[org/gnome/desktop/a11y/applications]\nscreen-keyboard-enabled=true\n' >"$HOME/.config/glib-2.0/settings/keyfile"
+    export GSETTINGS_BACKEND=keyfile
+    exec systemd-cat -t boppos-installer sway -c /etc/boppos-installer/sway.conf
 fi

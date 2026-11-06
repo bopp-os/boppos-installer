@@ -1,0 +1,14 @@
+#!/bin/sh
+# boppos-orient: turn the screen upright on handhelds whose panel is natively portrait (the compositor does not apply
+# the kernel's panel-orientation hint), and map the touchscreen to it. Started by the installer's sway session.
+# The model names are DMI product_name / product_version values.
+name=$(cat /sys/class/dmi/id/product_name 2>/dev/null)
+ver=$(cat /sys/class/dmi/id/product_version 2>/dev/null)
+case "$name|$ver" in
+    83E1\|* | *\|Legion\ Go | Jupiter\|* | Galileo\|*) transform=90 ;;
+    *) exit 0 ;;
+esac
+out=$(swaymsg -t get_outputs | awk '/^Output / {print $2; exit}')
+[ -n "$out" ] || exit 1
+swaymsg output "$out" transform "$transform"
+swaymsg input type:touch map_to_output "$out"

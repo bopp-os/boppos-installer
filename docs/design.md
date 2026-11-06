@@ -145,7 +145,7 @@ Two sub-questions: what the installer environment is, and how it boots.
 
 Environment (recommended): an **archiso-style (or CachyOS live-profile) minimal image**, UEFI only first, with
 `bootc`, `ostree`, `skopeo`/`podman` not needed (bootc pulls the image itself), `NetworkManager` (+ `iwd` for Wi-Fi),
-`cage` (kiosk Wayland compositor) autostarting the installer, `boppos-tools` (for `hwprofiles` and artwork), `btrfs-progs`,
+`sway` (a kiosk session, config in `/etc/boppos-installer/sway.conf`) and `squeekboard` (on-screen keyboard) autostarting the installer, `boppos-tools` (for `hwprofiles` and artwork), `btrfs-progs`,
 `dosfstools`, `cryptsetup`, `sfdisk`, firmware, and a minimal GPU stack. Boots straight into the wizard like SteamOS Recovery; no
 desktop, no shell unless the user presses a hidden key (tty2). Building needs `mkarchiso`, which needs root and loop
 devices, so it runs in **CI** (GitHub Actions) or on the host, not in the Litterbox.
@@ -155,22 +155,22 @@ With option E, the forked installer comes from the bopp-os package repo (`bopp-o
 `boppos-fisherman` (Go backend) from pinned commits of the two `boppos` branches. The `boppos-` names keep a
 same-named package elsewhere from replacing them (pacman takes a package from the first repo that has its name);
 `provides`/`conflicts` cover the upstream names, and the binaries keep theirs. The ISO lists them in
-`packages.x86_64`, no Flatpak runtime, and `cage` launches the installer full-screen.
+`packages.x86_64`, no Flatpak runtime, and sway launches the installer with squeekboard beside it (cage has no text-input support, so a touch-only handheld got no keyboard).
 
 The profile is `image/` (archiso v91, derived from its baseline/releng profiles), built with
 `sudo image/build.sh` (mkarchiso in a privileged Arch container; log in `probe-logs/iso-build.log`):
 - UEFI only (`uefi.systemd-boot`), squashfs (xz), Arch `core`/`extra` plus `[bopp-os]` (key `keys/boppos.asc`,
   fingerprint checked by the build).
-- tty1 autologins `liveuser` (sysusers, passwordless sudo), whose login runs `cage -s -- bootc-installer` with its
+- tty1 autologins `liveuser` (sysusers, passwordless sudo), whose login runs `sway -c /etc/boppos-installer/sway.conf` (which starts squeekboard, `boppos-orient` and the installer) with its
   output in the journal (`journalctl -t boppos-installer`); tty2 autologins root for debugging;
   `systemd-firstboot` is masked (UTC, us keymap). `/etc/bootc-installer/live-iso-mode` tells fisherman it is live media, so the installer uses
-  `sudo` (no polkit agent in cage).
+  `sudo` (no polkit agent in the kiosk).
 - `/etc/bootc-installer/images.json` lists the five flavors (plasma, gnome, niri, cinnamon, deck) with `znver4`/`v4`/`v3`
   tags to pick by hand until CPU detection exists; each sets composefs, systemd-boot, btrfs and `skip_flatpaks`.
 - Memory floor (4c): `copytoram=n`, zram up to 4 GB only on machines with ≤ 8 GB, `/tmp` capped at 25%.
 - Second boot entry with `console=ttyS0` for VM tests.
 - Local loop (nothing pushed): `image/dev.sh run` builds both packages from the local checkouts in a rootless dev
-  container and starts the installer under cage in a window on the desktop; `image/dev.sh packages` plus
+  container and starts the installer under sway in a window on the desktop; `image/dev.sh packages` plus
   `sudo LOCAL_PKGS=$PWD/.dev/pkgs image/build.sh` puts the same packages in an ISO.
 - Needed in the packages first: UI pass-through of `skipFlatpaks`/`kernelArgs`, and fisherman excluding
   archiso's boot medium (`/run/archiso/bootmnt`) from install targets.
@@ -374,7 +374,7 @@ usable** for margin. A live ISO runs from RAM and the BoppOS image is ~8 GB comp
 2. **Partition and mount the target before downloading anything.** The download can only start once the disk exists.
 3. **Live system stays small:** squashfs ≤ ~1.5 GB, read from the boot medium below 8 GB usable (copied to RAM
    only at the 8 GB tier above), zram swap enabled, `/tmp` capped.
-4. **Installer UI is light:** cage + one GTK4 app, no desktop, no browser, no Flatpak runtime.
+4. **Installer UI is light:** sway + squeekboard + one GTK4 app, no desktop, no browser, no Flatpak runtime.
 5. **Test:** the CI/QEMU smoke test boots the ISO with `-m 4096` and runs a full `--autoinstall` install; the
    install fails the test if the kernel's OOM killer fires or peak memory (from `/proc/pressure/memory` and
    `MemAvailable`) leaves under ~300 MB. A second run at `-m 32768` covers the RAM tiers (squashfs copied to RAM,
@@ -523,3 +523,17 @@ Still open:
 7. Re-test the fs-verity errors (section 4a) on real hardware before release, and test the ostree path on real hardware
    and with Secure Boot (no shim in the image).
 8. Minimum disk size: measured peak is 34 GB; the fisherman limit is 50 GiB. Lower it later if more installs agree.
+
+## Handhelds (Legion Go): first test 2026-11-06
+
+The stick booted (an earlier miss was a loose USB-A to C adapter). Three problems, none of them seen in a VM:
+1. The screen was sideways. The panel is natively portrait and the compositor ignores the kernel's panel-orientation
+   hint. `boppos-orient` (started by the sway config) turns the output 90 degrees for DMI product `83E1` / "Legion Go"
+   and the Steam Deck (`Jupiter`, `Galileo`), and maps the touchscreen to it. The direction 90 is a guess, not
+   verified; `rotate 90|270|normal` on tty2 changes it by hand.
+2. No on-screen keyboard (cage has no text-input protocol). sway + squeekboard; the setting
+   `screen-keyboard-enabled` is forced on because the handheld's controllers count as a hardware keyboard.
+3. No Wi-Fi page: the installer has one (`defaults/network.py`) but `builder.py` did not register it and `recipe.json`
+   had no step for it. Both fixed; the page skips itself when a connection already exists, `conn-check` follows it.
+
+Not verified yet: any of the three on the Go; squeekboard under sway in a VM.

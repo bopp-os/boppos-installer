@@ -11,10 +11,9 @@ zram-generator
 # Network (the installer's network page uses NetworkManager through libnm)
 networkmanager
 wpa_supplicant
-# Kiosk session: cage runs the installer full-screen
-cage
-# rotate (tty2) needs it, for portrait handheld panels
-wlr-randr
+# The installer session: sway as a kiosk, squeekboard as the on-screen keyboard (touch-only handhelds)
+sway
+squeekboard
 mesa
 adwaita-fonts
 noto-fonts

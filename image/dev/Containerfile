@@ -4,10 +4,10 @@ FROM docker.io/library/archlinux:latest
 
 RUN pacman -Syu --noconfirm --needed base-devel git meson go blueprint-compiler glib2-devel gettext \
         python python-pytest python-gobject python-requests gtk4 libadwaita gnome-desktop-4 libgweather-4 libnm \
-        gstreamer gst-plugins-base gst-plugins-good polkit hicolor-icon-theme adwaita-fonts noto-fonts cage mesa \
+        gstreamer gst-plugins-base gst-plugins-good polkit hicolor-icon-theme adwaita-fonts noto-fonts cage sway squeekboard mesa \
         podman skopeo util-linux parted dosfstools btrfs-progs e2fsprogs cryptsetup device-mapper psmisc openssl \
         shadow tar efibootmgr sudo; \
-    command -v meson go blueprint-compiler cage >/dev/null
+    command -v meson go blueprint-compiler sway squeekboard >/dev/null
 
 # pacman's post-install hooks refuse to run inside a rootless container ("could not isolate the network"), so do
 # the ones the installer depends on by hand: compiled GSettings schemas, icon cache, fonts, MIME types.

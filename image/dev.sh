@@ -3,7 +3,7 @@
 # Wayland desktop. Run it from the main checkout (it looks for ../bootc-installer, ../fisherman and ../pkgbuilds).
 #
 #   image/dev.sh run [--nocheck|--nobuild]   (--nobuild reuses .dev/pkgs) build both packages from the LOCAL checkouts (working trees, uncommitted edits
-#                                      included), then start the installer as the ISO does (cage), nested in a window
+#                                      included), then start the installer as the ISO does (sway and squeekboard), nested in a window
 #   image/dev.sh packages [--nocheck]  only build them, into .dev/pkgs (for: sudo LOCAL_PKGS=$PWD/.dev/pkgs image/build.sh)
 #   image/dev.sh shell                 a shell in the dev container with the local packages installed
 #   image/dev.sh setup                 (re)build the dev image
@@ -117,6 +117,7 @@ in_container() {  # in_container <podman flags> -- <command...>
     podman run --rm --security-opt label=disable --security-opt unmask=/sys/firmware "${flags[@]}" \
         -v "$pkgs:/pkgs:ro" \
         -v "$here/airootfs/etc/bootc-installer:/etc/bootc-installer:ro" \
+        -v "$here/airootfs/etc/boppos-installer:/etc/boppos-installer:ro" \
         -v "$dev/home:/root" \
         "${icon_mount[@]}" \
         -v "$sock:/tmp/xdg/host-0" \
@@ -137,8 +138,13 @@ case "$cmd" in
     packages) build_packages ;;
     run)
         [ "$nobuild" = 1 ] || build_packages
-        echo "starting the installer (cage, nested in a window); log: probe-logs/dev-run.log"
-        in_container -- cage -s -- bootc-installer 2>&1 | tee "$repo/probe-logs/dev-run.log"
+        echo "starting the installer (sway, nested in a window); log: probe-logs/dev-run.log"
+        # The same session as the ISO: sway (nested in a window here) and squeekboard, the on-screen keyboard.
+        # shellcheck disable=SC2016  # expanded inside the container
+        in_container -- sh -c 'mkdir -p "$HOME/.config/glib-2.0/settings"
+            printf "[org/gnome/desktop/a11y/applications]\nscreen-keyboard-enabled=true\n" >"$HOME/.config/glib-2.0/settings/keyfile"
+            export GSETTINGS_BACKEND=keyfile
+            exec sway -c /etc/boppos-installer/sway.conf' 2>&1 | tee "$repo/probe-logs/dev-run.log"
         ;;
     shell)
         ensure_image
