@@ -151,6 +151,7 @@
         "ext4"
       ],
       "skip_flatpaks": true,
+      "preload_steam": true,
       "default_hostname": "boppos",
       "children": [
         {
