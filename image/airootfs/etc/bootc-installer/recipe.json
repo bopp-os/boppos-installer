@@ -3,6 +3,7 @@
   "distro_logo": "",
   "imgref": "ghcr.io/bopp-os/cachyos-plasma:v3",
   "skipFlatpaks": true,
+  "preloadSteam": true,
   "steps": {
     "welcome": {
       "template": "welcome",
